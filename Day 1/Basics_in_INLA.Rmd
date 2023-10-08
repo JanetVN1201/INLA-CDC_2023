@@ -1,7 +1,7 @@
 ---
-title: "R-INLA Workshop May 2022"
+title: "Advancing public health and data science using INLA - Day 1"
 author: "Janet van Niekerk"
-date: "5/23/2022"
+date: "October 2023"
 output: html_document
 ---
 
@@ -344,6 +344,12 @@ print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids
                             c("Marginal log-likelihood", "DIC", "WAIC")
                             )))
 ```
+We can also do cross-validation as a means of measuring prediction performance.
+
+
+
+
+
 ## Example 3 - Temporal and spline models
 We use the AirPassengers dataset that contains the monthly totals of international airline passengers from 1949 to 1960. 
 ```{r Example 3.a}
@@ -425,171 +431,3 @@ lines(airp.rw1$summary.fitted.values$mean, col = "purple")
 lines(airp.rw2$summary.fitted.values$mean, col = "orange")
 ```
   
-## Example 4 - Spatial survival model
-This the Leukemia data from Henderson et al (2003) (Henderson, R. and Shimakura, S. and Gorst, D., 2002, Modeling spatial variation in leukemia survival data, JASA, 97, 460, 965–972.)
-
-```{r Example 3}
-Leuk <- LeukSurv
-
-### Survival time as year
-Leuk$time <- Leuk$time / 365
-Leuk$age <- scale(Leuk$age)
-Leuk$wbc <- scale(Leuk$wbc)
-Leuk$tpi <- scale(Leuk$tpi)
-summary(Leuk)
-
-
-### KM
-library(survival)
-km <- survfit(Surv(time, cens) ~ sex, Leuk) 
-
-par(mar = c(2.5, 2.5, 0.5, 0.5), mgp = c(1.5, 0.5, 0), las = 1)
-plot(km, conf.int = TRUE, col = 2:1) 
-legend('topright', c('female', 'male'), lty = 1, col = 2:1,
-  bty = "n") 
-
-nwEngland=read.bnd(system.file("otherdata/nwengland.bnd", package="spBayesSurv"))
-plot(nwEngland)
-points(Leuk$x, Leuk$y, pch=8)
-
-#CHECK
-B.nweng <- neighbormatrix(nwEngland)
-plot(nwEngland, col ="grey")
-plotneighbors(nwEngland, add = TRUE)
-
-##Areal data
-form0 <- inla.surv(time, cens) ~ sex + age + wbc + tpi 
-
-
-### model formulae with the spatial effect 
-form <- update(
-    form0, . ~ . +
-               f(district, model = "bym2", graph = B.nweng))
-
-### inla result 
-r <- inla(
-    form, family = "weibullsurv",
-    data = Leuk, 
-    control.predictor = list(
-        compute = TRUE),
-    control.family = list(variant = 1))
-
-summary(r)
-
-plot(nwEngland)
-#########
-spplot(r$summary.random$district$mean, add = TRUE)
-
-
-
-### mesh 
-loc <- cbind(Leuk$xcoord, Leuk$ycoord)
-nwseg <- inla.sp2segment(INLA::nwEngland)
-
-### non-convex hull boundaries around the polygon
-bnd1 <- inla.nonconvex.hull(nwseg$loc, 0.03, 0.1, resol = 50)
-bnd2 <- inla.nonconvex.hull(nwseg$loc, 0.25)
-
-### make the mesh
-mesh <- inla.mesh.2d(
-    loc, boundary = list(bnd1, bnd2),
-    max.edge = c(0.05, 0.2), cutoff = 0.02)
-
-### visualize it 
-plot(mesh, asp=1)
-lines(nwseg$loc, col=2)
-points(Leuk$x, Leuk$y, pch=8)
-
-#### ANOTHER MESH
-### intitial mesh inside the first boundary segment
-mesh0 <- inla.mesh.2d(
-    boundary=bnd1, 
-    max.edge=0.03)
-mesh0$n
-
-plot(nwEngland)
-plot(mesh0, add=TRUE)
-
-### now, consider the locations of this inital ponts 
-mesh <- inla.mesh.2d(
-    loc=mesh0$loc[,1:2],
-    max.edge=0.15, offset=0.25, cutoff=0.02)
-mesh$n
-
-### visualize it 
-plot(mesh, asp=1)
-plot(nwEngland, add=TRUE)
-points(Leuk$x, Leuk$y, pch=8)
-
-
-## projector matrix 
-A <- inla.spde.make.A(mesh, loc)
-
-## the spde model object (with priors) 
-spde <- inla.spde2.pcmatern(mesh = mesh,
-  prior.range = c(0.05, 0.01), # P(range < 0.05) = 0.01
-  prior.sigma = c(1, 0.01)) # P(sigma > 1) = 0.01
-
-
-## model formulae (without spatial)
-form0 <- inla.surv(time, cens) ~
-    0 + a0 + sex + age + wbc + tpi 
-
-
-### model formulae with the spatial effect 
-form <- update(
-    form0, . ~ . +
-               f(spatial, model = spde))
-
-
-### stack the data 
-stk <- inla.stack(
-  data = list(time = Leuk$time, cens = Leuk$cens), 
-  A = list(A, 1), 
-  effect = list(
-    list(spatial = 1:spde$n.spde), 
-    data.frame(a0 = 1, Leuk[, -c(1:4)]))) 
-
-
-### inla result 
-r <- inla(
-    form, family = "weibullsurv",
-    data = inla.stack.data(stk), 
-    control.predictor = list(
-        A = inla.stack.A(stk),
-        compute = TRUE),
-    control.family = list(variant = 1)) 
-
-
-### fixed effects result 
-round(r$summary.fixed, 4)
-
-### hyperparameters summary result 
-round(r$summary.hyperpar, 4)
-
-### projector to a grid 
-bbnw <- bbox(INLA::nwEngland)
-bbnw
-r0 <- diff(range(bbnw[1, ])) / diff(range(bbnw[2, ]))
-r0
-prj <- inla.mesh.projector(mesh, xlim = bbnw[1, ], 
-  ylim = bbnw[2, ], dims = round(c(r0, 1)*300))
-
-## NA's were not to plot 
-spat.m <- inla.mesh.project(prj, r$summary.random$spatial$mean)
-spat.sd <- inla.mesh.project(prj, r$summary.random$spatial$sd)
-ov <- over(SpatialPoints(prj$lattice$loc), INLA::nwEngland)
-spat.sd[is.na(ov)] <- NA
-spat.m[is.na(ov)] <- NA
-
-### plot the spatial field
-par(mfrow = c(1, 2), mar = c(5, 5, 5, 5))
-image.plot(x = prj$x, y = prj$y, z = spat.m, main = "Spatial mean field")
-plot(INLA::nwEngland, add = TRUE)
-points(Leuk$x, Leuk$y, pch=13, col = "grey", cex = 0.2)
-
-image.plot(x = prj$x, y = prj$y, z = spat.sd, main = "SD of the spatial field")
-plot(INLA::nwEngland, add = TRUE)
-points(Leuk$x, Leuk$y, pch=13, col = "grey", cex = 0.2)
-```
-
