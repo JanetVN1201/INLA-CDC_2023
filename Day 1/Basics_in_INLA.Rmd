@@ -1,7 +1,7 @@
 ---
 title: "Advancing public health and data science using INLA - Day 1"
 author: "Janet van Niekerk"
-date: "October 2023"
+date: "May 2024"
 output: html_document
 ---
 
@@ -32,9 +32,6 @@ library("nloptr")
 library("faraway")
 library("lme4")
 library("boot")
-
-
-inla.setOption(inla.mode = "experimental")
 ```
 ## Bayesian statistics
 Conceptually we can illustrate Bayesian statistics with the following diagram.
