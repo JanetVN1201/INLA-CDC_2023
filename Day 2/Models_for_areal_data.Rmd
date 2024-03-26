@@ -1,0 +1,56 @@
+---
+title: "Advancing public health and data science using INLA - Day 2"
+author: "Janet van Niekerk (janet.vanNiekerk@kaust.edu.sa)"
+output: html_document
+date: "May 2024"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("INLA")
+library("DiagrammeR")
+library("car")
+library("ggpubr")
+library("spdep")
+library("RColorBrewer")
+library("spatstat")
+library("rgdal")
+library("sp")
+library("maptools")
+library("latticeExtra")
+library("gridExtra")
+library("gstat")
+library("raster")
+library("ggplot2")
+library("ggfortify")
+library("survival")
+library("joineR")
+#library("bayesSurv")
+library("BayesSurvival")
+library("icenReg")
+library("nloptr")
+library("faraway")
+library("lme4")
+library("boot")
+```
+
+## Spatial models for areal data
+
+Intro to lattice and irregular lattice
+
+## Example 1 - Besag and Besagproper models
+```{r eval=FALSE, echo = TRUE}
+inla.doc("besag")
+```
+
+## Example 2 - BYM and BYM2 models
+```{r eval=FALSE, echo = TRUE}
+inla.doc("bym")
+```
+
+## Example 3 - Flexible Besag models (nonstationary Besag)
+Esmail's work
+
+## Example 4 - Joint disease mapping models (using Besag2 model)
+Hanan's work
+
