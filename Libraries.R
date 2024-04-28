@@ -20,5 +20,5 @@ if (length(ix) > 0) {install.packages(libs[ix], repos = "https://cloud.r-project
   sapply(libs[ix], require, char = TRUE)}
 
 devtools::install_github('DenisRustand/INLAjoint', build_vignettes = TRUE)
-
+devtools::install_github("esmail-abdulfattah/fbesag")
 
