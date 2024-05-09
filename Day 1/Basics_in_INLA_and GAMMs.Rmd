@@ -174,7 +174,7 @@ We can view a summary of the results from the model, available in the INLA objec
 ```{r Example 1.e}
 summary(model3.1)
 ```
-We see form the $95/%$ credible intervals that only *year* and *ulcer* are statistically significant covariates in explaining the variation in the *status* variable. Since $\beta_{Year}\in$ (`r model3.1$summary.fixed$'0.025quant'[4]`; `r model3.1$summary.fixed$'0.975quant'[4]`), we can infer that earlier years of surgery increases the odds of dying from malignant melanoma, compared to later years. Also, an ulcerated tumor increases the odds of dying from malignant melanoma, since $\beta_{Ulcer=1}\in$ (`r model3.1$summary.fixed$'0.025quant'[6]`; `r model3.1$summary.fixed$'0.975quant'[6]`).  
+We see from the $95/%$ credible intervals that only *year* and *ulcer* are statistically significant covariates in explaining the variation in the *status* variable. Since $\beta_{Year}\in$ (`r model3.1$summary.fixed$'0.025quant'[4]`; `r model3.1$summary.fixed$'0.975quant'[4]`), we can infer that earlier years of surgery increases the odds of dying from malignant melanoma, compared to later years. Also, an ulcerated tumor increases the odds of dying from malignant melanoma, since $\beta_{Ulcer=1}\in$ (`r model3.1$summary.fixed$'0.025quant'[6]`; `r model3.1$summary.fixed$'0.975quant'[6]`).  
 
 We can also extract the posterior distributions of the fixed effects from the INLA object *model3.1*
 ```{r Example 1.f}
