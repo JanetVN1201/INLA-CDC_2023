@@ -15,11 +15,13 @@ libs = c("DiagrammeR","car","ggpubr","spdep","RColorBrewer",
          "survival","joineR","BayesSurvival","icenReg","nloptr",
          "faraway","lme4","boot","sf","coda","spBayesSurv",
          "BayesX", "R2BayesX", "fields", "R.rsp", "devtools",
-         "rnaturalearth", "leaflet")
+         "rnaturalearth", "leaflet", "remotes")
+
 ix <- which(!sapply(libs, require, char = TRUE))
 if (length(ix) > 0) {install.packages(libs[ix], repos = "https://cloud.r-project.org/")
   sapply(libs[ix], require, char = TRUE)}
 
 devtools::install_github('DenisRustand/INLAjoint', build_vignettes = TRUE)
 devtools::install_github("esmail-abdulfattah/fbesag")
-
+remotes::install_github("inlabru-org/inlabru", ref = "devel")
+remotes::install_github("eliaskrainski/INLAspacetime",  build_vignettes=TRUE)
