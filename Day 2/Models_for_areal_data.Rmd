@@ -55,7 +55,7 @@ inla.doc("bym")
 
 ## Example 3 - Flexible Besag models (nonstationary Besag)
 ```{r code esmail}
-setwd("~/Documents/KAUST/clean-data-sets/brazil/fbesag/data2")
+
 
 #######################-------------------#######################
 #------------------------Functions-------------------------------
@@ -169,15 +169,9 @@ setwd("~/Documents/KAUST/clean-data-sets/brazil/fbesag/data2")
 #-------------------------Models--------------------------------
 #######################-------------------#######################
 
-load("brazil.RData")
+load("Data/brazil.RData")
 
 Six_terrestrial_biomes = TRUE
-
-library("INLA")
-library("ggplot2")
-library("spdep")
-library("ggthemes")
-library("hydroGOF")
 
 constr.inter <- list(A = matrix(1,1,dim(graph)[1]), e = rep(0, 1))
 scaled_graph = as.matrix(INLA:::inla.scale.model(graph,constr.inter))
@@ -203,12 +197,9 @@ data$c_T1 <- data$T1
 config = FALSE
 baseformula <- Y ~ 1 + f(S1,model="generic0", Cmatrix= scaled_graph, constr= TRUE, rankdef = 1,hyper = precision.prior) +
                        f(T1, model = "rw1", constr = TRUE,  scale.model = TRUE, hyper =  list(prec = list(prior = "pc.prec", param = c(0.5, 0.01)))) #+
-                       # f(c_S1,model="generic0", Cmatrix= diag(558), hyper = precision.prior) +
-                       # f(c_T1,model="generic0", Cmatrix= diag(12), hyper = precision.prior)
+                     
 formula     <- Y ~ 1 + f(S1, model = fbesag.model, constr= TRUE, rankdef=1) + 
-                       f(T1, model = "rw1", constr = TRUE, scale.model = TRUE, hyper = precision.prior) #+
-                       # f(c_S1,model="generic0", Cmatrix= diag(558), hyper = precision.prior) +
-                       # f(c_T1,model="generic0", Cmatrix= diag(12), hyper = precision.prior)
+                       f(T1, model = "rw1", constr = TRUE, scale.model = TRUE, hyper = precision.prior) 
 
 model_naive <- inla(formula = baseformula, data = data, family = "poisson", offset = log(E),
                     control.inla = list(strategy = 'gaussian', int.strategy = "eb"), 
