@@ -420,12 +420,13 @@ if(Six_terrestrial_biomes){
 ## Example 4 - Joint disease mapping models (using Besag2 model)
 ```{r pre}
 # read data 
-
 merg.data <- readRDS("Data/MAP_data.RDS")
-
 
 # The map 
 map <- ne_countries(returnclass = "sf")
+
+# Extract the map and compile the shape
+if (T){
 names(map)[names(map) == "iso_a3"] <- "ISO3"
 names(map)[names(map) == "name"] <- "NAME"
 map <- map[order(map$name_long),]
@@ -435,14 +436,12 @@ map$name_long[131] <- "Congo"
 map <- map[order(map$name_long),]
 
 # Select only the common countries from the map
-
-sub_map <- match(map$name_long , Common.countries)
+sub_map <- match(map$name_long , merg.data$Common.countries)
 map$cc <- sub_map
 map_2 <- subset(map,map$cc!="NA" )
 map_2 <- map_2[order(map_2$name_long),]
 
-Our_index <- match(map$name_long , Common.countries)
-
+Our_index <- match(map$name_long , merg.data$Common.countries)
 
 map_2$D.E = merg.data$D.E
 map_2$M.E = merg.data$M.E
@@ -457,10 +456,15 @@ rr <- clgeo_CollectionReport(map_2)
 summary(rr)
 issues <- rr[rr$type == NA,]
 map_2_c <- clgeo_Clean(map_2)
+}
 
+# Neighbourhood graph
 nb <- poly2nb(map_2_c)
 nb2INLA("map.adj", nb)
 g <- inla.read.graph(filename = "map.adj")
+
+# Joint mean model
+
 
 
 
@@ -469,8 +473,6 @@ r.m <- inla(formula = map_2$M.cases ~ 1 + offset(log(map_2$M.E)) +
               f(b1,model = "bym2", scale.model = T,
                 graph = g)   ,
             family = "poisson",
-            # offset = log(map_2$M.E),
-            #E = map_2$M.E,
             data =  merg.data,
             control.predictor = list(compute = T),
             control.compute = list(dic = T, waic = T, cpo = T),
@@ -479,7 +481,7 @@ r.m <- inla(formula = map_2$M.cases ~ 1 + offset(log(map_2$M.E)) +
             verbose = TRUE)
 
 
-
+#Summary
 round(r.m$summary.hyperpar[,c(1,3,5,6)],3)
 
 
