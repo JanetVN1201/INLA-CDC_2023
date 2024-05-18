@@ -48,10 +48,186 @@ Intro to lattice and irregular lattice
 inla.doc("besag")
 ```
 
+In this example we use the North Carolina Sudden Infant Death Syndrome dataset.
+```{r Example 1.a}
+data(nc.sids)
+head(nc.sids)
+hist(nc.sids$SID74)
+summary(nc.sids)
+```
+We see that the number of deaths is a count variable and therefore propose a Poisson regression model, i.e. 
+$$y\sim Poi(E\theta)$$
+with $$\theta = \exp(\eta)$$ and $E$ is the expected count. In this way, $\theta$ indicates the risk. We need to calculate the expected count for each observation,
+```{r Example 1.b}
+p_hat <- sum(nc.sids$SID74) / sum(nc.sids$BIR74)
+nc.sids$E74 <- p_hat * nc.sids$BIR74
+```
+We use the NWBIR as a covariate to investigate if it has any influence on the risk of SIDS. We consider the proportion instead of the count,
+```{r Example 1.c}
+nc.sids$nwp_hat74 <- nc.sids$NWBIR74 / nc.sids$BIR74
+```
+Adding a random intercept adds an independent effect, although the counties are probably not independent in terms of socio-economic diversity. So we should rather include a structured random effect such that some "intercepts" are correlated with each other, conveying the dependence in space. Since we have space divided into discrete non-overlapping parts, we can use a Besag or BYM model.
+```{r Example 1.d}
+#Add besag for counties - a spatial model
+#Graph - neighbourhood structure
+nc.sidsOGR <- readOGR(system.file("shapes/sids.shp", package="spData")[1])
+proj4string(nc.sidsOGR) <- CRS("+proj=longlat +ellps=clrk66")
+boston.adj <- poly2nb(nc.sidsOGR)
+B.boston <- nb2mat(boston.adj, style = "B")
+
+plot(nc.sidsOGR, border="grey")
+plot(boston.adj, coordinates(nc.sidsOGR), add = TRUE, col = "blue")
+
+#Add expected count and covariate to spatial dataset    
+p_hat <- sum(nc.sidsOGR$SID74) / sum(nc.sidsOGR$BIR74)
+nc.sidsOGR$E74 <- p_hat * nc.sidsOGR$BIR74
+nc.sidsOGR$nwp_hat74 <- nc.sidsOGR$NWBIR74 / nc.sidsOGR$BIR74
+nc.sidsOGR$CNTY_ID2 <- 1:(length(nc.sidsOGR$CNTY_ID))
+
+#Fit the spatial model
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "besag", graph = B.boston, scale.model = TRUE), 
+                     data = as.data.frame(nc.sidsOGR), 
+                     family = "poisson",
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+```
+The posterior summary is
+```{r Example 2.e}
+summary(result3_sids)
+```
+The two extra hyperparameters from the BYM effect are the marginal standard deviation, $\sigma$ and the weight parameter, $\phi$, and their marginal posteriors are
+```{r Example 2.f}
+res3_sd_bym <- inla.tmarginal(function(x) sqrt(1/x), result3_sids$marginals.hyperpar$`Precision for CNTY_ID2`)
+plot(res3_sd_bym, type = "l", xlab = expression(sigma), ylab = expression(paste("f(", sigma ,"|y)")))
+plot(result3_sids$marginals.hyperpar$`Phi for CNTY_ID2`, type = "l", xlab = expression(phi), ylab = expression(paste("f(", phi ,"|y)")))
+```
+We can again visually see the fit of the predictions from the model to the data,
+```{r Example 2.g}
+nc.sidsOGR$fit_bym <- result3_sids$summary.fitted.values$mean*nc.sidsOGR$E74
+spplot(nc.sidsOGR, c("SID74", "fit_bym"), col.regions = brewer.pal(n=9, name = "GnBu"),
+       at = seq(0, 50, 9))
+
+plot(nc.sids$SID74)
+points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
+points(nc.sids$E74*result2_sids$summary.fitted.values[,1], col = "red", pch = 19, cex = 0.5)
+points(nc.sids$E74*result3_sids$summary.fitted.values[,1], col = "purple", pch = 8, cex = 0.8)
+```
+When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
+```{r Example 2.h}
+result1_sids <- inla(SID74 ~ nwp_hat74, data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY.ID, model = "iid"), 
+                     data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.boston, scale.model = TRUE), 
+                     data = as.data.frame(nc.sidsOGR), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
+            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
+            cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1])), 
+            nrow = 3, ncol = 3,
+            dimnames = list(c("Model 1", "Model 2", "Model 3"),
+                            c("Marginal log-likelihood", "DIC", "WAIC")
+                            )))
+```
+
 ## Example 2 - BYM and BYM2 models
 ```{r eval=FALSE, echo = TRUE}
 inla.doc("bym")
+inla.doc("bym2")
 ```
+Let's revisit the NC SIDS dataset example.  
+Now we add a BYM effect for the different counties,
+```{r Example 2.e}
+#Add besag for counties - a spatial model
+#Graph - neighbourhood structure
+nc.sidsOGR <- readOGR(system.file("shapes/sids.shp", package="spData")[1])
+proj4string(nc.sidsOGR) <- CRS("+proj=longlat +ellps=clrk66")
+boston.adj <- poly2nb(nc.sidsOGR)
+B.boston <- nb2mat(boston.adj, style = "B")
+
+plot(nc.sidsOGR, border="grey")
+plot(boston.adj, coordinates(nc.sidsOGR), add = TRUE, col = "blue")
+
+#Add expected count and covariate to spatial dataset    
+p_hat <- sum(nc.sidsOGR$SID74) / sum(nc.sidsOGR$BIR74)
+nc.sidsOGR$E74 <- p_hat * nc.sidsOGR$BIR74
+nc.sidsOGR$nwp_hat74 <- nc.sidsOGR$NWBIR74 / nc.sidsOGR$BIR74
+nc.sidsOGR$CNTY_ID2 <- 1:(length(nc.sidsOGR$CNTY_ID))
+
+#Fit the spatial model
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.boston, scale.model = TRUE), 
+                     data = as.data.frame(nc.sidsOGR), 
+                     family = "poisson",
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+```
+The posterior summary is
+```{r Example 2.f}
+summary(result3_sids)
+```
+The two extra hyperparameters from the BYM effect are the marginal standard deviation, $\sigma$ and the weight parameter, $\phi$, and their marginal posteriors are
+```{r Example 2.g}
+res3_sd_bym <- inla.tmarginal(function(x) sqrt(1/x), result3_sids$marginals.hyperpar$`Precision for CNTY_ID2`)
+plot(res3_sd_bym, type = "l", xlab = expression(sigma), ylab = expression(paste("f(", sigma ,"|y)")))
+plot(result3_sids$marginals.hyperpar$`Phi for CNTY_ID2`, type = "l", xlab = expression(phi), ylab = expression(paste("f(", phi ,"|y)")))
+```
+We can again visually see the fit of the predictions from the model to the data,
+```{r Example 2.h}
+nc.sidsOGR$fit_bym <- result3_sids$summary.fitted.values$mean*nc.sidsOGR$E74
+spplot(nc.sidsOGR, c("SID74", "fit_bym"), col.regions = brewer.pal(n=9, name = "GnBu"),
+       at = seq(0, 50, 9))
+
+plot(nc.sids$SID74)
+points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
+points(nc.sids$E74*result2_sids$summary.fitted.values[,1], col = "red", pch = 19, cex = 0.5)
+points(nc.sids$E74*result3_sids$summary.fitted.values[,1], col = "purple", pch = 8, cex = 0.8)
+```
+When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
+```{r Example 2.i}
+result1_sids <- inla(SID74 ~ nwp_hat74, data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY.ID, model = "iid"), 
+                     data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.boston, scale.model = TRUE), 
+                     data = as.data.frame(nc.sidsOGR), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
+            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
+            cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1])), 
+            nrow = 3, ncol = 3,
+            dimnames = list(c("Model 1", "Model 2", "Model 3"),
+                            c("Marginal log-likelihood", "DIC", "WAIC")
+                            )))
+```
+We can also do cross-validation as a means of measuring prediction performance. 
+
+
 
 ## Example 3 - Flexible Besag models (nonstationary Besag)
 ```{r code esmail}
@@ -460,8 +636,8 @@ map_2_c <- clgeo_Clean(map_2)
 
 # Neighbourhood graph
 nb <- poly2nb(map_2_c)
-nb2INLA("map.adj", nb)
-g <- inla.read.graph(filename = "map.adj")
+nb2INLA("Day 2/map.adj", nb)
+g <- inla.read.graph(filename = "Day 2/map.adj")
 
 # Joint mean model
 
@@ -810,15 +986,6 @@ l %>% addPolygons(color = "grey", weight = 1,
             opacity = 0.5, title = "Observed",
             position = "topright")
 
-
-
-
-
-
-
-
-
-
 # iid effect for malaria
 
 map_2$vmq = (r1$summary.random$b1$mean[1:21] * sqrt(r1$summary.hyperpar$mode[3]) -  
@@ -826,9 +993,6 @@ map_2$vmq = (r1$summary.random$b1$mean[1:21] * sqrt(r1$summary.hyperpar$mode[3])
   sqrt(1 - r1$summary.hyperpar$mode[4])
 
 range(map_2$vmq)
-
-
-library(leaflet)
 
 l <- leaflet(map_2) %>% addTiles()
 
@@ -851,9 +1015,6 @@ map_2$v = (r1$summary.random$b2$mean[1:21] * sqrt(r1$summary.hyperpar$mode[5]) -
 
 range(map_2$v)
 
-
-library(leaflet)
-
 l <- leaflet(map_2) %>% addTiles()
 
 pal <- colorNumeric(palette = "YlOrRd", domain = seq(-5.6,2.6 , by = 0.1))
@@ -866,19 +1027,10 @@ l %>% addPolygons(color = "grey", weight = 1,
             opacity = 0.5, title = "IID",
             position = "topright")
 
-
-
-
-
-
-
-
 # The shared component for Malaria 
 
 map_2$sharedqm = r1$summary.random$besagproper$mean
 range(map_2$sharedqm)
-
-library(leaflet)
 
 l <- leaflet(map_2) %>% addTiles()
 
@@ -897,8 +1049,6 @@ l %>% addPolygons(color = "grey", weight = 1,
 
 map_2$sharedqd = r1$summary.random$Besag.c$mean
 range(map_2$sharedqd)
-
-library(leaflet)
 
 l <- leaflet(map_2) %>% addTiles()
 
@@ -920,8 +1070,6 @@ map_2$sjm = r1$summary.random$b1$mean[22:42]
 
 range(map_2$sjm)
 
-library(leaflet)
-
 l <- leaflet(map_2) %>% addTiles()
 
 pal <- colorNumeric(palette = "YlOrRd", domain =seq(-1,0.5 , by = 0.1))
@@ -941,8 +1089,6 @@ l %>% addPolygons(color = "grey", weight = 1,
 map_2$sjg = r1$summary.random$b2$mean[22:42]
 
 range(map_2$sjg)
-
-library(leaflet)
 
 l <- leaflet(map_2) %>% addTiles()
 
@@ -966,9 +1112,6 @@ l %>% addPolygons(color = "grey", weight = 1,
 map_2$tsmq = r1$summary.random$b1$mean[22:42]+r1$summary.random$besagproper$mean
 
 range(map_2$tsmq) 
-
-
-library(leaflet)
 
 l <- leaflet(map_2) %>% addTiles()
 
@@ -1013,9 +1156,6 @@ map_2$rrjm = r1$summary.fitted.values[1:21, "mean"]/map_2$M.E
 
 range(map_2$rrjm) 
 
-
-library(leaflet)
-
 l <- leaflet(map_2) %>% addTiles()
 
 pal <- colorNumeric(palette = "YlOrRd", domain =seq(0,6.3, by = 0.1))
@@ -1035,7 +1175,6 @@ map_2$rrjd = r1$summary.fitted.values[22:42, "mean"]/map_2$D.E
 range(map_2$rrjd) 
 
 
-library(leaflet)
 
 l <- leaflet(map_2) %>% addTiles()
 

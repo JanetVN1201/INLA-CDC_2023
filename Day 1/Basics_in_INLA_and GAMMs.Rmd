@@ -260,57 +260,7 @@ plot(nc.sids$SID74)
 points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
 points(nc.sids$E74*result2_sids$summary.fitted.values[,1], col = "red", pch = 19, cex = 0.5)
 ```
-Adding a random intercept adds an independent effect, although the counties are probably not independent in terms of socio-economic diversity. So we should rather include a structured random effect such that some "intercepts" are correlated with each other, conveying the dependence in space. Since we have space divided into discrete non-overlapping parts, we can use a Besag or BYM model.
-```{r Example 2.j, eval = F}
-inla.doc("besag")
-inla.doc("bym")
-```
-Now we add a BYM effect for the different counties,
-```{r Example 2.k}
-#Add besag for counties - a spatial model
-#Graph - neighbourhood structure
-nc.sidsOGR <- readOGR(system.file("shapes/sids.shp", package="spData")[1])
-proj4string(nc.sidsOGR) <- CRS("+proj=longlat +ellps=clrk66")
-boston.adj <- poly2nb(nc.sidsOGR)
-B.boston <- nb2mat(boston.adj, style = "B")
-
-plot(nc.sidsOGR, border="grey")
-plot(boston.adj, coordinates(nc.sidsOGR), add = TRUE, col = "blue")
-
-#Add expected count and covariate to spatial dataset    
-p_hat <- sum(nc.sidsOGR$SID74) / sum(nc.sidsOGR$BIR74)
-nc.sidsOGR$E74 <- p_hat * nc.sidsOGR$BIR74
-nc.sidsOGR$nwp_hat74 <- nc.sidsOGR$NWBIR74 / nc.sidsOGR$BIR74
-nc.sidsOGR$CNTY_ID2 <- 1:(length(nc.sidsOGR$CNTY_ID))
-
-#Fit the spatial model
-result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.boston, scale.model = TRUE), 
-                     data = as.data.frame(nc.sidsOGR), 
-                     family = "poisson",
-                     control.predictor = list(compute = TRUE),
-                     E = E74)
-```
-The posterior summary is
-```{r Example 2.l}
-summary(result3_sids)
-```
-The two extra hyperparameters from the BYM effect are the marginal standard deviation, $\sigma$ and the weight parameter, $\phi$, and their marginal posteriors are
-```{r Example 2.m}
-res3_sd_bym <- inla.tmarginal(function(x) sqrt(1/x), result3_sids$marginals.hyperpar$`Precision for CNTY_ID2`)
-plot(res3_sd_bym, type = "l", xlab = expression(sigma), ylab = expression(paste("f(", sigma ,"|y)")))
-plot(result3_sids$marginals.hyperpar$`Phi for CNTY_ID2`, type = "l", xlab = expression(phi), ylab = expression(paste("f(", phi ,"|y)")))
-```
-We can again visually see the fit of the predictions from the model to the data,
-```{r Example 2.n}
-nc.sidsOGR$fit_bym <- result3_sids$summary.fitted.values$mean*nc.sidsOGR$E74
-spplot(nc.sidsOGR, c("SID74", "fit_bym"), col.regions = brewer.pal(n=9, name = "GnBu"),
-       at = seq(0, 50, 9))
-
-plot(nc.sids$SID74)
-points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
-points(nc.sids$E74*result2_sids$summary.fitted.values[,1], col = "red", pch = 19, cex = 0.5)
-points(nc.sids$E74*result3_sids$summary.fitted.values[,1], col = "purple", pch = 8, cex = 0.8)
-```
+Adding a random intercept adds an independent effect, although the counties are probably not independent in terms of socio-economic diversity. So we should rather include a structured random effect such that some "intercepts" are correlated with each other, conveying the dependence in space (Day 2 material)
 When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
 ```{r Example 2.o}
 result1_sids <- inla(SID74 ~ nwp_hat74, data = nc.sids, 
@@ -326,23 +276,15 @@ result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY.ID, model = "iid"),
                      control.predictor = list(compute = TRUE),
                      E = E74)
 
-result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.boston, scale.model = TRUE), 
-                     data = as.data.frame(nc.sidsOGR), 
-                     family = "poisson",
-                     control.compute = list(dic = TRUE, waic = TRUE),
-                     control.predictor = list(compute = TRUE),
-                     E = E74)
-
 print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
-            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
-            cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1])), 
+            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1])), 
             nrow = 3, ncol = 3,
-            dimnames = list(c("Model 1", "Model 2", "Model 3"),
+            dimnames = list(c("Model 1", "Model 2"),
                             c("Marginal log-likelihood", "DIC", "WAIC")
                             )))
 ```
 We can also do cross-validation as a means of measuring prediction performance.
-
+***
 
 ## Example 3 - Temporal and spline models
 We use the AirPassengers dataset that contains the monthly totals of international airline passengers from 1949 to 1960. 
