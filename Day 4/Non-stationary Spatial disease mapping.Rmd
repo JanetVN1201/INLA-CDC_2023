@@ -8,8 +8,6 @@ date: "May 2024"
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = "/Users/vanniej/Documents/GitHub/INLA-CDC_2023")
 
-
-
 library("INLA")
 library("DiagrammeR")
 library("car")
@@ -37,6 +35,8 @@ library("lme4")
 library("boot")
 library("rnaturalearth")
 library("leaflet")
+library("viridis")
+library("ggthemes")
 ```
 
 ## Non-stationary Besag model for areal data
@@ -206,8 +206,7 @@ model_fbesag <- inla(formula = formula, data = data, family = "poisson", offset 
                                             cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 2)),
                      control.fixed = list(correlation.matrix = TRUE, 
                                           prec.intercept = 1, prec = 1),
-                     control.predictor = list(link = 1, compute = TRUE), 
-                     verbose = TRUE)
+                     control.predictor = list(link = 1, compute = TRUE))
 
 #######################-------------------#######################
 #-------------------------Results--------------------------------
@@ -368,12 +367,6 @@ gplot <- ggplot(map_df) +
   labs(fill = "spatial variability") +
   theme_void()  #+ scale_fill_discrete(type = "viridis", name = "", labels = c("Caatinga", "Cerrado", "Pantanal", "Pampas", "Amazon", "Atlantic Rainforest"))
 
-if(Six_terrestrial_biomes){
-  ggsave(gplot, filename = "figs/Six_terrestrial_biomes/diff_sds_6_partitions.pdf", height = 4, width = 5)
-}else{
-  ggsave(gplot, filename = "figs/administrative_regions/diff_sds_5_partitions.pdf", height = 4, width = 5)
-}
-
 values <- numeric(558)
 diff_m1 <- model_fbesag$internal.summary.hyperpar$mean[1:5]
 for(i in 1:558) values[i] <- mean(diff_m1[id_regions[neigh_graphs[[i]]]])
@@ -384,11 +377,7 @@ gplot <- ggplot(map_df) +
   labs(fill = "spatial effect") +
   theme_void()  
 
-if(Six_terrestrial_biomes){
-  ggsave(gplot, filename = "figs/Six_terrestrial_biomes/means_6_partitions.pdf", height = 4, width = 5)
-}else{
-  ggsave(gplot, filename = "figs/administrative_regions/means_5_partitions.pdf", height = 4, width = 5)
-}
+
 
   
 ##--> on time:
