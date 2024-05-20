@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/vanniej/Documents/GitHub/INLA-CDC_2023")
 library("INLA")
 library("DiagrammeR")
 library("car")
@@ -14,9 +14,7 @@ library("ggpubr")
 library("spdep")
 library("RColorBrewer")
 library("spatstat")
-library("rgdal")
 library("sp")
-library("maptools")
 library("latticeExtra")
 library("gridExtra")
 library("gstat")
@@ -25,12 +23,9 @@ library("ggplot2")
 library("ggfortify")
 library("survival")
 library("joineR")
-#library("bayesSurv")
 library("BayesSurvival")
 library("icenReg")
 library("nloptr")
-library("faraway")
-library("lme4")
 library("boot")
 ```
 ## Bayesian statistics
@@ -134,7 +129,7 @@ inla.doc("binomial")
 ```
 We use the *melanoma* dataset in the *boot* library. The dataset contains information on the survival of patients with malignant melanoma after a tumor removal surgery. 
 ```{r Example 1.a}
-data(melanoma)
+data(melanoma, package = "boot")
 summary(melanoma)
 ```
 The *status* variable is the response in this case where $1$ denotes that the patient died of melanoma and $0$ indicates that the patient did not die of melanoma. 
@@ -278,7 +273,7 @@ result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY.ID, model = "iid"),
 
 print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
             cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1])), 
-            nrow = 3, ncol = 3,
+            nrow = 2, ncol = 3,
             dimnames = list(c("Model 1", "Model 2"),
                             c("Marginal log-likelihood", "DIC", "WAIC")
                             )))
