@@ -1,4 +1,4 @@
-### Examples CDC training - day 3 - part 3 
+### Examples CDC training - day 3 - part 3
 
 library(INLA)
 library(INLAjoint)
@@ -48,6 +48,10 @@ Y1 <- rnorm(nmesy, linPredY1, b1_e)
 Y2 <- rpois(nmesy, exp(linPredY2))
 lon <- data.frame(Y1, Y2, id, time)
 summary(lon) # dataset
+head(lon, 20)
+
+
+
 
 
 # first fit a mixed effects model for the first marker
@@ -73,28 +77,16 @@ VarCov05 <- matrix(apply(VarCov, 1, function(x) quantile(x, 0.5)), 2, 2) ; round
 VarCov975 <- matrix(apply(VarCov, 1, function(x) quantile(x, 0.975)), 2, 2) ; round(VarCov975, 3)
 
 
-formula <- Y1 ~ time + f(id, model="iidkd", order=2, n=length(unique(lon$id))*2,
-                         hyper=list(theta1=list(param=c(10, 1, 1, 0))))+
-  f(ids, time, copy="id")
-M1 <- inla(formula, data=lon)
-summary(M1)
-
-x <- seq(-10, 10, by=0.1)
-plot(x, dnorm(x, 0, 1), type='l')
-abline(v=0.2, col='red')
-
-x <- seq(-100, 1000, by=0.1)
-plot(x, dnorm(x, 500, 1), type='l')
-abline(v=0.2, col='red')
-
-inla.priors.used(M1)
-
-M1 <- inla(formula, data=lon,
-           control.fixed=list(mean.intercept=500, prec.intercept=1,
-                              mean=0, prec=1))
-summary(M1)
-
-
+# bivariate model
+# structure for multi-outcome models:
+# L1 .
+# L1 .
+# L1 .
+# .  L2
+# .  L2
+# .  L2
+# .  L2
+# => size = N1 + N2
 
 N1 <- length(lon$Y1)
 N2 <- length(lon$Y2)
@@ -144,15 +136,46 @@ summary(M3, sdcor=T) # standard deviation and correlation instead of variance-co
 
 # independent markers: corLong=F
 
-# make predictions with observations from 0, 1 and 2 markers
 
-
-NewData <- lon[lon$id==1,]
-P <- predict(M3, NewData, horizon=10, inv.link=T)
+# predictions
+NewData0 <- lon[1,]
+NewData0$Y1 <- NewData0$Y2 <- NA
+NewData0
+P0 <- predict(M3, NewData0, horizon=10, inv.link=T)
 
 library(ggplot2)
 theme_set(theme_minimal())
-ggplot(P$PredL) + facet_wrap(~Outcome, ncol=2, scales="free") +
+ggplot(P0$PredL) + facet_wrap(~Outcome, ncol=2, scales="free") +
+  geom_line(aes(x=time, y=quant0.5)) +
+  geom_line(aes(x=time, y=quant0.025), linetype="dashed")+
+  geom_line(aes(x=time, y=quant0.975), linetype="dashed")+
+  theme(legend.position = "none")
+
+# 1 marker observed
+NewData1 <- lon[lon$id==1,]
+NewData1$Y1 <- NA
+NewData1
+P1 <- predict(M3, NewData1, horizon=10, inv.link=T)
+
+library(ggplot2)
+theme_set(theme_minimal())
+ggplot(P1$PredL) + facet_wrap(~Outcome, ncol=2, scales="free") +
+  geom_line(aes(x=time, y=quant0.5)) +
+  geom_line(aes(x=time, y=quant0.025), linetype="dashed")+
+  geom_line(aes(x=time, y=quant0.975), linetype="dashed")+
+  theme(legend.position = "none")+
+  geom_point(data = data.frame(x = NewData$time, y = NewData$Y2, Outcome = "Y2"),
+             aes(x = NewData$time, y = NewData$Y2))
+
+
+# 2 markers observed
+NewData2 <- lon[lon$id==1,]
+NewData2
+P2 <- predict(M3, NewData2, horizon=10, inv.link=T)
+
+library(ggplot2)
+theme_set(theme_minimal())
+ggplot(P2$PredL) + facet_wrap(~Outcome, ncol=2, scales="free") +
   geom_line(aes(x=time, y=quant0.5)) +
   geom_line(aes(x=time, y=quant0.025), linetype="dashed")+
   geom_line(aes(x=time, y=quant0.975), linetype="dashed")+
@@ -161,24 +184,6 @@ geom_point(data = data.frame(x = NewData$time, y = NewData$Y1, Outcome = "Y1"),
            aes(x = NewData$time, y = NewData$Y1))+
   geom_point(data = data.frame(x = NewData$time, y = NewData$Y2, Outcome = "Y2"),
              aes(x = NewData$time, y = NewData$Y2))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

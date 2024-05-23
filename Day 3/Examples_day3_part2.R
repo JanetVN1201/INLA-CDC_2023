@@ -1,19 +1,12 @@
-library(INLAjoint) 
-library(JM)
+library(INLAjoint)
+setwd("/home/dr/Documents/CDC24")
+load("Data/Data_day3.RData") # contains 3 datasets (pbc2 from package JM, bmt from package smcure and readmission from package frailtypack)
 
-data(pbc2) # dataset
-
-pbc2time05 <- pbc2[c(2,which(diff(as.integer(pbc2$id))==1)+2),]
-pbc2time05 <- pbc2time05[-which(diff(as.integer(pbc2time05$id))==0),]
-pbc2time05$year <- 0.5
-
-pbc2_ni <- rbind(pbc2[c(1,which(diff(as.integer(pbc2$id))==1)+1),], pbc2time05)
-pbc2_ni <- pbc2_ni[order(pbc2_ni$id),]
-pbc2_2 <- pbc2[, c("id", "year", "serBilir", "drug")]
-print(head(pbc2_2, 10), row.names=F)
-
+LongData <- pbc2[, c("id", "year", "serBilir","drug")]
+print(head(LongData, 10), row.names=F)
+# mixed effects regression model
 M1 <- joint(formLong = serBilir ~ year + drug  +  (1 + year|id),
-            dataLong = pbc2, id = "id", timeVar = "year",
+            dataLong = LongData, id = "id", timeVar = "year",
             family = "lognormal")
 summary(M1)
 summary(M1, sdcor=TRUE)
@@ -23,16 +16,28 @@ plot(M1, priors=TRUE, sdcor=TRUE)$Covariances
 
 
 
+
+
+
+# prior sensitivity analysis
+LongDatatime05 <- LongData[c(2,which(diff(as.integer(LongData$id))==1)+2),]
+LongDatatime05 <- LongDatatime05[-which(diff(as.integer(LongDatatime05$id))==0),]
+LongDatatime05$year <- 0.5
+
+LongData_ni <- rbind(LongData[c(1,which(diff(as.integer(LongData$id))==1)+1),], LongDatatime05)
+LongData_ni <- LongData_ni[order(LongData_ni$id),]
+LongData_2 <- LongData[, c("id", "year", "serBilir", "drug")]
+
 M2 <- joint(formLong = serBilir ~ year + drug  +  (1 + year|id),
-            dataLong = pbc2, id = "id", timeVar = "year",
+            dataLong = LongData, id = "id", timeVar = "year",
             family = "lognormal", control=list(priorRandom=list(r=100, R=1)))
 
 M3 <- joint(formLong = serBilir ~ year + drug  +  (1 + year|id),
-            dataLong = pbc2_ni, id = "id", timeVar = "year",
+            dataLong = LongData_ni, id = "id", timeVar = "year",
             family = "lognormal", control=list(priorRandom=list(r=10, R=1)))
 
 M4 <- joint(formLong = serBilir ~ year + drug  +  (1 + year|id),
-            dataLong = pbc2_ni, id = "id", timeVar = "year",
+            dataLong = LongData_ni, id = "id", timeVar = "year",
             family = "lognormal", control=list(priorRandom=list(r=100, R=1)))
 
 plot(M1, priors=TRUE, sdcor=TRUE)$Covariances

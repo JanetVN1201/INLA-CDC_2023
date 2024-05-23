@@ -1,10 +1,10 @@
-### Examples CDC training - day 3 - part 5 
+### Examples CDC training - day 3 - part 5
 
 library(INLA)
 library(INLAjoint)
-library(JM) # This package contains the dataset
 
-data(pbc2) # dataset
+setwd("/home/dr/Documents/CDC24")
+load("Data/Data_day3.RData") # contains 3 datasets (pbc2 from package JM, bmt from package smcure and readmission from package frailtypack)
 #pbc2 <- pbc2[which(pbc2$id %in% c(1:5)),]
 # extract some variable of interest without missing values
 Longi <- na.omit(pbc2[, c("id", "years", "status","drug","age",
@@ -16,7 +16,7 @@ Surv$death <- ifelse(Surv$status=="dead",1,0) # competing event 1
 Surv$trans <- ifelse(Surv$status=="transplanted",1,0) # competing event 2
 
 
-# explain empirical Bayes // paper gives same results with eb and default
+# empirical Bayes: same frequentist properties / cheaper computational cost
 
 # Joint model with functions of time and current value + current slope association
 f1 <- function(x) x^2
@@ -31,6 +31,10 @@ summary(M4)
 plot(M4, sdcor=T)
 
 
+
+
+
+
 # Joint model for longitudinal and competing risk
 M6 <- joint(formSurv = list(inla.surv(time = years, event = death)  ~ sex + drug,
                             inla.surv(time = years, event = trans) ~ edema * sex),
@@ -39,18 +43,8 @@ M6 <- joint(formSurv = list(inla.surv(time = years, event = death)  ~ sex + drug
             basRisk = c("rw1", "rw1"), assoc = c("SRE", "SRE_ind"), control=list(int.strategy="eb", safemode=F))
 summary(M6)
 
-# Joint model for 3 longitudinal and competing risk
 
-M7 <- joint(formLong = list(serBilir ~ year * drug + sex + (1|id),
-                            platelets ~ year + f1(year) + drug + sex + (1|id),
-                            albumin ~ year + f1(year) + f2(year) + drug + (1|id)),
-            formSurv = list(inla.surv(time = years, event = death) ~ drug,
-                            inla.surv(time = years, event = trans) ~ drug),
-            dataLong = Longi, dataSurv=Surv, id = "id", corLong=TRUE, timeVar = "year",
-            family = c("lognormal", "poisson", "gaussian"), basRisk = c("rw1", "rw1"),
-            assoc = list(c("CV", "CV"), c("SRE", ""), c("CV_CS", "CS")),
-            control=list(int.strategy="eb"))
-summary(M7)
+
 
 
 # Joint model for longitudinal and multi-state
@@ -60,12 +54,29 @@ E12 <- inla.surv(time = SurvMS[[1]]$Tstop, event = SurvMS[[1]]$status) # transit
 E13 <- inla.surv(time = SurvMS[[2]]$Tstop, event = SurvMS[[2]]$status) # transition 1->3
 E23 <- inla.surv(time = SurvMS[[3]]$Tstop, truncation=SurvMS[[3]]$Tstart,
                  event =SurvMS[[3]]$status) # transition 2->3
-M9 <- joint(formSurv=list(E12 ~ X, E13 ~ X, E23 ~ X),
+M7 <- joint(formSurv=list(E12 ~ X, E13 ~ X, E23 ~ X),
             formLong=list(y ~ time + X + (1+time|id)),
             basRisk = c("rw2", "rw1", "exponentialsurv"), timeVar = "time",
             assoc = list(c("CV", "CV", "CV")), id="id",
-            dataSurv = SurvMS, dataLong = LongMS)
-summary(M9)
+            dataSurv = SurvMS, dataLong = LongMS,
+            cutpoints=seq(0, max(SurvMS[[3]]$Tstop), len=15))
+summary(M7)
+
+
+
+# Joint model for 3 longitudinal and competing risk
+M8 <- joint(formLong = list(serBilir ~ year * drug + sex + (1|id),
+                            platelets ~ year + f1(year) + drug + sex + (1|id),
+                            albumin ~ year + f1(year) + f2(year) + drug + (1|id)),
+            formSurv = list(inla.surv(time = years, event = death) ~ drug,
+                            inla.surv(time = years, event = trans) ~ drug),
+            dataLong = Longi, dataSurv=Surv, id = "id", corLong=TRUE, timeVar = "year",
+            family = c("lognormal", "poisson", "gaussian"), basRisk = c("rw1", "rw1"),
+            assoc = list(c("CV", "CV"), c("SRE", ""), c("CV_CS", "CS")),
+            control=list(int.strategy="eb"))
+summary(M8)
+
+
 
 
 # Multivariate joint model

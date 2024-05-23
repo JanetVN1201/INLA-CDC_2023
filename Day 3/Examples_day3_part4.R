@@ -1,13 +1,12 @@
-### Examples CDC training - day 3 - part 4 
+### Examples CDC training - day 3 - part 4
 
 library(INLA)
-inla.setOption(inla.mode="experimental")
 library(INLAjoint)
 # Example: Joint longitudinal - Survival
 
 set.seed(1)
 # data generation - one longitudinal marker
-nsujet=1000 # number of individuals
+nsujet=500 # number of individuals
 # L1 (longitudinal continuous)
 b_0=2 # intercept
 b_1=-0.3 # slope
@@ -47,39 +46,41 @@ for (i in 1:nsujet){
 lon <- lon[!is.na(ind),]
 summary(surv)
 summary(lon)
+head(surv)
+head(lon, 20)
 
 
 
-
-NL <- dim(lon)[1]
-NS <- dim(surv)[1]
-
-data <- list(
-  IntL1 = c(rep(1, NL), rep(NA, NS)),
-  TimeL1 = c(lon$time, rep(NA, NS)),
-  IntS1 = c(rep(NA, NL), rep(1, NS)),
-  b_i0L1 = c(lon$id, rep(NA, NS)),
-  b_i0S1 = c(rep(NA, NL), surv$id),
-  Yjoint = list(L1 = c(lon$L1, rep(NA, NS)),
-                S1 = inla.surv(time = c(rep(NA, NL), surv$deathTimes),
-                               event = c(rep(NA, NL), surv$d)))
-)
-formula <- Yjoint ~ -1 + IntL1 + TimeL1 + IntS1 +
-  f(b_i0L1, model="iid") + f(b_i0S1, copy="b_i0L1", fixed=FALSE)
-
-JointM <- inla(formula = formula, data = data,
-               family=c("gaussian", "exponentialsurv"),
-               control.inla = list(int.strategy="eb"))
-summary(JointM)
-
-lambda <- inla.tmarginal(function(x) exp(x), JointM$marginals.fixed$IntS1)
-inla.zmarginal(lambda)
-ResErr <- inla.tmarginal(function(x) sqrt(1/x),
-                         JointM$marginals.hyperpar$`Precision for the Gaussian observations`)
-inla.zmarginal(ResErr)
-SD_b <- inla.tmarginal(function(x) sqrt(1/x),
-                       JointM$marginals.hyperpar$`Precision for b_i0L1`)
-inla.zmarginal(SD_b)
+# with INLA:
+# NL <- dim(lon)[1]
+# NS <- dim(surv)[1]
+#
+# data <- list(
+#   IntL1 = c(rep(1, NL), rep(NA, NS)),
+#   TimeL1 = c(lon$time, rep(NA, NS)),
+#   IntS1 = c(rep(NA, NL), rep(1, NS)),
+#   b_i0L1 = c(lon$id, rep(NA, NS)),
+#   b_i0S1 = c(rep(NA, NL), surv$id),
+#   Yjoint = list(L1 = c(lon$L1, rep(NA, NS)),
+#                 S1 = inla.surv(time = c(rep(NA, NL), surv$deathTimes),
+#                                event = c(rep(NA, NL), surv$d)))
+# )
+# formula <- Yjoint ~ -1 + IntL1 + TimeL1 + IntS1 +
+#   f(b_i0L1, model="iid") + f(b_i0S1, copy="b_i0L1", fixed=FALSE)
+#
+# JointM <- inla(formula = formula, data = data,
+#                family=c("gaussian", "exponentialsurv"),
+#                control.inla = list(int.strategy="eb"))
+# summary(JointM)
+#
+# lambda <- inla.tmarginal(function(x) exp(x), JointM$marginals.fixed$IntS1)
+# inla.zmarginal(lambda)
+# ResErr <- inla.tmarginal(function(x) sqrt(1/x),
+#                          JointM$marginals.hyperpar$`Precision for the Gaussian observations`)
+# inla.zmarginal(ResErr)
+# SD_b <- inla.tmarginal(function(x) sqrt(1/x),
+#                        JointM$marginals.hyperpar$`Precision for b_i0L1`)
+# inla.zmarginal(SD_b)
 
 
 library(INLAjoint)
