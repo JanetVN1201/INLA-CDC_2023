@@ -114,6 +114,10 @@ result <- inla(formula, family, data,
 result$summary.linear.predictor
 result$marginal.linear.predictor
 ```
+Some vignettes:
+```{r eval = F}
+browseVignettes(package = "INLA")
+```
 ## Example 1 - Binary regression
 Consider a dichotomous outcome (the outcome variable $y$ can be either $1$ or $0$). Suppose we have covariates $\pmb z$ that we want to regress on the outcome variable $y$. Since the support of the outcome variable is not the real line, we cannot assume a Gaussian distribution for the outcome variable like in general linear models, instead we need a generalized linear model formulated specifically for dichotomous outcomes. Two such models that are popular in practice are logistic regression models and probit models. The logistic regression model links the covariates to the outcome variable through a *logit* link function such that
 \begin{equation}
