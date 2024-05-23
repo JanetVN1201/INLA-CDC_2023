@@ -15,7 +15,7 @@ libs = c("DiagrammeR","car","ggpubr","spdep","RColorBrewer",
          "faraway","lme4","boot","sf","coda","spBayesSurv",
          "BayesX", "R2BayesX", "fields", "R.rsp", "devtools",
          "rnaturalearth", "leaflet", "remotes", "hydroGOF",
-         "BiocManager", "INLAspacetime")
+         "INLAspacetime")
 
 ix <- which(!sapply(libs, require, char = TRUE))
 if (length(ix) > 0) {install.packages(libs[ix], repos = "https://cloud.r-project.org/")

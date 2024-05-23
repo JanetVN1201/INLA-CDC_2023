@@ -162,12 +162,9 @@ plot(result4_sids$marginals.hyperpar$`Phi for CNTY_ID2`, type = "l", xlab = expr
 We can again visually see the fit of the predictions from the model to the data,
 ```{r Example 2.h}
 nc.sids$fit_bym <- result4_sids$summary.fitted.values$mean*nc.sids$E74
-plot(nc.sids["SID74"],
+plot(nc.sids[c("SID74", "fit_bym")],
        breaks = seq(0, 50, by = 5),
-     main = "Observed counts")
-plot(nc.sids["fit_bym"],
-       breaks = seq(0, 50, by = 5),
-     main = "Predicted counts")
+     main = "Observed and predicted counts")
 
 plot(nc.sids$SID74)
 points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
@@ -177,7 +174,6 @@ points(nc.sids$E74*result4_sids$summary.fitted.values[,1], col = "darkgreen", pc
 ```
 When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
 ```{r Example 2.i}
-
 print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
             cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
             cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1]),
