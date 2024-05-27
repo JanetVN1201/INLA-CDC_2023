@@ -25,29 +25,25 @@ nmesindiv=followup/gap+1 # number of individual measurements
 nmesy= nmesindiv*nsujet # total number of measurements
 id<-rep(1:nsujet, each=nmesindiv) # individual id
 
-# random effects variance-covariance matrix
-# Sigma <- matrix(c(0.16, 0.03, 0.02, 0.04,
-#                   0.03, 0.09, 0.03, 0.00,
-#                   0.02, 0.03, 0.25, 0.08,
-#                   0.04, 0.00, 0.08, 0.16),ncol=4,nrow=4)
-s1 <- 0.4
-s2 <- 0.3
-s3 <- 0.5
-s4 <- 0.4
-c12 <- 0.8
+s1 <- 0.4 # random intercept Y1 SD
+s2 <- 0.3 # random slope Y1 SD
+s3 <- 0.5 # random intercept Y2 SD
+s4 <- 0.4 # random slope Y1 SD
+c12 <- 0.8 # correlations
 c13 <- 0.8
 c14 <- 0.7
 c23 <- 0.8
 c24 <- 0.8
 c34 <- 0.4
 
-cov_12 <- s1*s2*c12
+cov_12 <- s1*s2*c12 # covariances
 cov_13 <- s1*s3*c13
 cov_14 <- s1*s4*c14
 cov_23 <- s2*s3*c23
 cov_24 <- s2*s4*c24
 cov_34 <- s3*s4*c34
 
+# Random effects variance-covariance matrix
 Sigma=matrix(c(s1^2,cov_12,cov_13,cov_14,
                cov_12,s2^2,cov_23,cov_24,
                cov_13,cov_23,s3^2,cov_34,
@@ -76,6 +72,14 @@ head(lon, 20)
 
 
 
+
+
+
+
+
+
+
+
 # first fit a mixed effects model for the first marker
 ids <- length(unique(lon$id))+lon$id
 
@@ -84,7 +88,7 @@ formula <- Y1 ~ time + f(id, model="iid2d", n=length(unique(lon$id))*2)+
 M1 <- inla(formula, data=lon)
 summary(M1)
 
-
+# alternative parametrization
 formula <- Y1 ~ time + f(id, model="iidkd", order=2, n=length(unique(lon$id))*2,
                          hyper = list(theta1 = list(param = c(10, 1, 1, 0))))+
   f(ids, time, copy="id")
@@ -98,6 +102,15 @@ VarCovMeans <- matrix(rowMeans(VarCov), 2, 2); round(VarCovMeans, 3)
 # VarCov025 <- matrix(apply(VarCov, 1, function(x) quantile(x, 0.025)), 2, 2) ; round(VarCov025, 3)
 # VarCov05 <- matrix(apply(VarCov, 1, function(x) quantile(x, 0.5)), 2, 2) ; round(VarCov05, 3)
 # VarCov975 <- matrix(apply(VarCov, 1, function(x) quantile(x, 0.975)), 2, 2) ; round(VarCov975, 3)
+
+
+
+
+
+
+
+
+
 
 
 # bivariate model
@@ -150,6 +163,16 @@ VarCov975 <- matrix(apply(VarCov, 1, function(x) quantile(x, 0.975)), 4, 4) ; ro
 
 Sigma[c(1,3,2,4), c(1,3,2,4)]
 
+
+
+
+
+
+
+
+
+
+
 # INLAjoint instead of INLA
 head(lon)
 M3 <- joint(formLong=list(Y1 ~ time + (1+time|id),
@@ -160,6 +183,16 @@ summary(M3, sdcor=T) # standard deviation and correlation instead of variance-co
 
 
 # independent markers: corLong=F
+
+
+
+
+
+
+
+
+
+
 
 
 # predictions
