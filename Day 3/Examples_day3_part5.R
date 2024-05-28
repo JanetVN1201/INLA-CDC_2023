@@ -2,6 +2,7 @@
 
 library(INLA)
 library(INLAjoint)
+library(splines)
 
 setwd("/home/dr/Documents/CDC24")
 load("Data/Data_day3.RData") # contains 3 datasets (pbc2 from package JM, bmt from package smcure and readmission from package frailtypack)
@@ -19,16 +20,45 @@ Surv$trans <- ifelse(Surv$status=="transplanted",1,0) # competing event 2
 # empirical Bayes: same frequentist properties / cheaper computational cost
 
 # Joint model with functions of time and current value + current slope association
-f1 <- function(x) x^2
-f2 <- function(x) x^3
+Nsplines <- ns(Longi$year, knots=1)
+f1 <- function(x) predict(Nsplines, x)[,1]
+f2 <- function(x) predict(Nsplines, x)[,2]
+
+# f1 <- function(x) x^2
+# f2 <- function(x) x^3
 
 M4 <- joint(formSurv =  inla.surv(time = years, event = death)  ~ drug,
-            formLong = serBilir ~ (1 + year + f1(year) + f2(year))*drug +
-              (f1(year) + f2(year) |id), family = "lognormal",
-            dataLong = Longi, dataSurv = Surv, id = "id", timeVar = "year", assoc = "CV_CS",
-            basRisk = "rw2", NbasRisk=25, control=list(int.strategy="eb", safemode=F))
+            formLong = serBilir ~ (1 + f1(year) + f2(year))*drug +
+              (1 + f1(year) + f2(year)|id), family = "lognormal",
+            dataLong = Longi, dataSurv = Surv, id = "id", timeVar = "year", assoc = "CV",
+            basRisk = "rw2", control=list(int.strategy="eb"))
 summary(M4)
 plot(M4, sdcor=T)
+
+NewData <- Longi[Longi$id %in%c(2, 13),]
+P <- predict(M4, NewData, horizon=14, inv.link=T, survival=T, Csurv=0)
+
+library(ggplot2)
+theme_set(theme_minimal())
+ggplot(P$PredL) +
+  geom_line(aes(x=year, y=quant0.5, group=id, color=id)) +
+  geom_line(aes(x=year, y=quant0.025, group=id, color=id), linetype="dashed")+
+  geom_line(aes(x=year, y=quant0.975, group=id, color=id), linetype="dashed")+
+  theme(legend.position = "none")+
+  geom_point(data = NewData, aes(x = year, y = serBilir, group=id, color=id))
+
+ggplot(P$PredS) +
+  geom_line(aes(x=year, y=Surv_quant0.5, group=id, color=id)) +
+  geom_line(aes(x=year, y=Surv_quant0.025, group=id, color=id), linetype="dashed")+
+  geom_line(aes(x=year, y=Surv_quant0.975, group=id, color=id), linetype="dashed")+
+  ylab("Survival probability") + theme(legend.position = "none")
+
+
+
+
+
+
+
 
 
 

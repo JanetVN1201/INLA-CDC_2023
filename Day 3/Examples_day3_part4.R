@@ -151,7 +151,7 @@ ggplot(P$PredS) + facet_wrap(~id, ncol=2) +
   geom_line(aes(x=time, y=Haz_quant0.5)) +
   geom_line(aes(x=time, y=Haz_quant0.025), linetype="dashed")+
   geom_line(aes(x=time, y=Haz_quant0.975), linetype="dashed")+
-  ylab("Survival probability") + theme(legend.position = "none")+
+  ylab("Risk") + theme(legend.position = "none")+
   geom_hline(data=TrueRisk, aes(yintercept=Risk, group=id, color="red"))
 
 
