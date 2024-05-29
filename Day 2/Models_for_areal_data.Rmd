@@ -197,7 +197,7 @@ plot(nc.sids[c("bym_iid")],
 ```
 
 When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
-```{r Example 2.e}
+```{r Example 2.f}
 print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
             cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
             cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1]),
