@@ -23,20 +23,21 @@ Surv$trans <- ifelse(Surv$status=="transplanted",1,0) # competing event 2
 Nsplines <- ns(Longi$year, knots=1)
 f1 <- function(x) predict(Nsplines, x)[,1]
 f2 <- function(x) predict(Nsplines, x)[,2]
-
+curve(f1, from=0, to=max(Longi$year), ylim=c(-1,1))
+curve(f2, from=0, to=max(Longi$year), add=T)
 # f1 <- function(x) x^2
 # f2 <- function(x) x^3
 
-M4 <- joint(formSurv =  inla.surv(time = years, event = death)  ~ drug,
+M1 <- joint(formSurv =  inla.surv(time = years, event = death)  ~ drug,
             formLong = serBilir ~ (1 + f1(year) + f2(year))*drug +
               (1 + f1(year) + f2(year)|id), family = "lognormal",
             dataLong = Longi, dataSurv = Surv, id = "id", timeVar = "year", assoc = "CV",
             basRisk = "rw2", control=list(int.strategy="eb"))
-summary(M4)
-plot(M4, sdcor=T)
+summary(M1)
+plot(M1, sdcor=T)
 
 NewData <- Longi[Longi$id %in%c(2, 13),]
-P <- predict(M4, NewData, horizon=14, inv.link=T, survival=T, Csurv=0)
+P <- predict(M1, NewData, horizon=14, inv.link=T, survival=T)#, Csurv=0 (enter at risk)
 
 library(ggplot2)
 theme_set(theme_minimal())
@@ -110,6 +111,7 @@ summary(M8)
 
 
 # Multivariate joint model
+# From: https://doi.org/10.1093/biostatistics/kxad019
 Nsplines <- ns(Longi$year, knots=c(1,4))
 f1 <- function(x) predict(Nsplines, x)[,1]
 f2 <- function(x) predict(Nsplines, x)[,2]
@@ -135,7 +137,7 @@ summary(M16)
 
 # 2000 seconds on laptop with 1 thread
 
-
+browseVignette("INLAjoint")
 
 
 
