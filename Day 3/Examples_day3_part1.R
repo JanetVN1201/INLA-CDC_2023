@@ -103,7 +103,10 @@ NewData2$id <- 1:4
 NewData2
 
 P2 <- predict(M2, NewData2, horizon=14, CIF=TRUE, id="id")
-# CIF is preferred because it accounts for other competing events
+# CIFs are preferred over survival curves in the context of
+# competing risks as survival curves would represent the
+# probability of having an event in a hypothetical world
+# where it is not possible to have any of the competing events.
 ggplot(P2$PredS, aes(x=time, y=CIF_quant0.5, group=id)) +
   geom_line(aes(color=id)) +
   geom_line(aes(x=time, y=CIF_quant0.025, color=id), linetype="dashed")+
