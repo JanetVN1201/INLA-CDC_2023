@@ -17,3 +17,7 @@ x <- 1:5
 A <- sparseMatrix(i, j, x = x)
 A
 summary(A)
+
+
+
+

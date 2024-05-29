@@ -96,14 +96,14 @@ names(inla.models()$likelihood)
 #What are the default priors?
 inla.set.control.fixed.default()
 #Details of the models
-#inla.doc()
+inla.doc("sn")
 ```
 For each of these groups we can obtain the summary statistics or the marginal posterior density using
 ```{r inla_effects, eval = F}
 result$summary.fixed
 result$summary.random
 result$summary.hyperpar
-result$smarginals.fixed
+result$marginals.fixed
 result$marginals.random
 result$marginals.hyperpar
 ```
@@ -165,7 +165,9 @@ where
 \end{equation} 
 ```{r Example 1.d}
 #INLA model
-model3.1 <- 
+model3.1 <- inla(formula = status ~ 1 + age + sex + year + thickness + ulcer,
+                 family = "binomial",
+                 data = melanoma)
 ```
 We can view a summary of the results from the model, available in the INLA object *model3.1*. 
 ```{r Example 1.e}
@@ -176,23 +178,23 @@ We see from the $95/%$ credible intervals that only *year* and *ulcer* are stati
 We can also extract the posterior distributions of the fixed effects from the INLA object *model3.1*
 ```{r Example 1.f}
 #posterior marginals of the model components
-pAge <- ggplot(data.frame(. ), aes(x=x, y=y)) + geom_line() + 
+pAge <- ggplot(data.frame(model3.1$marginals.fixed$age), aes(x=x, y=y)) + geom_line() + 
   labs(x = expression(beta["Age"]), y = "Density") + 
   geom_vline(xintercept = 0, col = "blue")
 
-pSex <- ggplot(data.frame(. ), aes(x=x, y=y)) + geom_line() + 
+pSex <- ggplot(data.frame(model3.1$marginals.fixed$sex ), aes(x=x, y=y)) + geom_line() + 
   labs(x = expression(beta["Sex = 1"]), y = "Density") + 
   geom_vline(xintercept = 0, col = "blue")
 
-pYear <- ggplot(data.frame(. ), aes(x=x, y=y)) + geom_line() + 
+pYear <- ggplot(data.frame(model3.1$marginals.fixed$year ), aes(x=x, y=y)) + geom_line() + 
   labs(x = expression(beta["Year"]), y = "Density") + 
   geom_vline(xintercept = 0, col = "blue")
 
-pThickness <- ggplot(data.frame(. ), aes(x=x, y=y)) + geom_line() + 
+pThickness <- ggplot(data.frame(model3.1$marginals.fixed$thickness ), aes(x=x, y=y)) + geom_line() + 
   labs(x = expression(beta["Thickness"]), y = "Density") + 
   geom_vline(xintercept = 0, col = "blue")
 
-pUlcer <- ggplot(data.frame(. ), aes(x=x, y=y)) + geom_line() + 
+pUlcer <- ggplot(data.frame(model3.1$marginals.fixed$ulcer ), aes(x=x, y=y)) + geom_line() + 
   labs(x = expression(beta["Ulcer = 1"]), y = "Density") + 
   geom_vline(xintercept = 0, col = "blue")
 
@@ -200,6 +202,28 @@ ggarrange(pAge, pSex, pYear, pThickness, pUlcer,
           nrow = 2, ncol = 3)
 
 ```
+
+We can also calculate posterior inference for the odds ratio's:
+```{r Ex1 OR}
+OR_age <- inla.tmarginal(function(x) exp(x),
+                        model3.1$marginals.fixed$age)
+plot(OR_age, type = "l")
+inla.zmarginal(OR_age)
+
+OR_ulcer <- inla.tmarginal(function(x) exp(x),
+                      model3.1$marginals.fixed$ulcer) 
+plot(OR_ulcer, type = "l")
+inla.zmarginal(OR_ulcer)
+
+OR_year <- inla.tmarginal(function(x) exp(x),
+                      model3.1$marginals.fixed$year ) 
+plot(OR_year, type = "l")
+inla.zmarginal(OR_year)
+
+
+```
+
+
 
 ## Example 2 - GLM,GLZ with random effects
 In this example we use the North Carolina Sudden Infant Death Syndrome dataset.
@@ -222,7 +246,10 @@ nc.sids$nwp_hat74 <- nc.sids$NWBIR74 / nc.sids$BIR74
 ```
 Now we can fit the Poisson regression model, 
 ```{r Example 2.d}
-result1_sids <- 
+result1_sids <- inla(formula = SID74 ~ nwp_hat74, family = "poisson",
+                     E = E74,
+                     data = nc.sids,
+control.predictor = list(compute = TRUE))
 ```
 The posterior summaries of this model is
 ```{r Example 2.e}
@@ -231,12 +258,23 @@ summary(result1_sids)
 We can also visually investigate how the fitted values from the model fits onto the observed data,
 ```{r Example 2.f}
 plot(nc.sids$SID74)
-points(. , col = "blue", pch = 10)
+points(nc.sids$E74*result1_sids$summary.fitted.values$mean , col = "blue", pch = 10)
 ```
 When we look at the data we see that the observations are form different counties and from a public health viewpoint this can provide interesting insight. We add a random intercept for each county to the Poisson regression model, so that we know have a mixed effects model.
 ```{r Example 2.g}
-result2_sids <- 
+result2_sids <- inla(formula = SID74 ~ nwp_hat74 + f(CNTY.ID, model = "iid", hyper = list(theta = list(param = c(2, 2), prior = "loggamma"))),
+                     family = "poisson",
+                     E = E74,
+                     data = nc.sids,
+control.predictor = list(compute = TRUE))
 summary(result2_sids)
+plot(seq(0, 10, by = 0.1),
+     dgamma(seq(0, 10, by = 0.1),
+            shape = 2,
+            scale = 2), type = "l")
+
+#What is the default prior for the iid model?
+inla.models()$latent$iid$hyper$theta
 ```
 The extra hyperparameter, the standard deviation of the random intercept has the following posterior,
 ```{r Example 2.h}
@@ -246,24 +284,37 @@ plot(res2_sd_rint, type = "l", xlab = expression(sigma), ylab = expression(paste
 We can also visually investigate how the fitted values from the model fits onto the observed data,
 ```{r Example 2.i}
 plot(nc.sids$SID74)
-points(. , col = "blue", pch = 10)
-points(. , col = "red", pch = 19, cex = 0.5)
+points(nc.sids$E74*result1_sids$summary.fitted.values$mean , col = "blue", pch = 10)
+points(nc.sids$E74*result2_sids$summary.fitted.values$mean , col = "red", pch = 19, cex = 0.5)
 ```
 Adding a random intercept adds an independent effect, although the counties are probably not independent in terms of socio-economic diversity. So we should rather include a structured random effect such that some "intercepts" are correlated with each other, conveying the dependence in space (Day 2 material)
 When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
 ```{r Example 2.o}
-result1_sids <- 
+result1_sids <- inla(formula = SID74 ~ nwp_hat74, family = "poisson",
+                     E = E74,
+                     data = nc.sids,
+control.predictor = list(compute = TRUE),
+control.compute   = list(dic = TRUE, waic = TRUE))
 
-result2_sids <- 
+result2_sids <- inla(formula = SID74 ~ nwp_hat74 + f(CNTY.ID, model = "iid"),
+                     family = "poisson",
+                     E = E74,
+                     data = nc.sids,
+control.predictor = list(compute = TRUE),
+control.compute   = list(dic = TRUE, waic = TRUE))
 
-print(matrix(rbind(cbind(. ),
-            cbind(. )), 
+print(matrix(rbind(cbind(result1_sids$mlik[1], 
+                         result1_sids$dic[1],
+                         result1_sids$waic[1]),
+            cbind(result2_sids$mlik[1], 
+                         result2_sids$dic[1],
+                         result2_sids$waic[1])), 
             nrow = 2, ncol = 3,
             dimnames = list(c("Model 1", "Model 2"),
                             c("Marginal log-likelihood", "DIC", "WAIC")
                             )))
 ```
-We can also do cross-validation as a means of measuring prediction performance.
+We can also do cross-validation as a means of measuring prediction performance (more on Day 2).
 
 ## Example 3 - Temporal and spline models
 We use the AirPassengers dataset that contains the monthly totals of international airline passengers from 1949 to 1960. 
@@ -276,20 +327,23 @@ airp.data <- data.frame(airp = as.vector(AirPassengers),
 summary(airp.data)
 
 plot(airp.data$airp, type = "l")
-plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers
-     ")
+plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers")
 airp.data$l_airp <- log(airp.data$airp)
 ```
-Since the response evolve sover time and is clearly associated with time, we will fit various te,poral models for illustration. Obviously, the seasonal model is the best choice.
+Since the response evolves over time and is clearly associated with time, we will fit various temporal models for illustration. Obviously, the seasonal model is the best choice.
 ```{r Example 3.b}
-#inla.doc("ar1")
-airp.ar1 <- 
+inla.doc("ar1")
+airp.ar1 <- inla(formula = l_airp ~ -1 + year + f(ID,         model = "ar1"),
+        family = "gaussian",
+        data = airp.data,
+        control.predictor = list(compute = TRUE),
+        control.family = list(hyper = list(prec =            list(param = c(1, 0.2)))))
+                 
 summary(airp.ar1)
-plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers
-     ")
-lines(. , col = "blue")
+plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers")
+lines(airp.ar1$summary.fitted.values$mean , col = "blue")
 ```
-
+#SKIP
 ```{r Example 3.c}
 #inla.doc("ar1c")
 Z_ar1c <- model.matrix(~ 0 + year, data = airp.data)
@@ -303,35 +357,68 @@ plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of
      ")
 lines(airp.ar1c$summary.fitted.values$mean, col = "green")
 ```
+
 ```{r Example 3.d}
-#inla.doc("seasonal")
-airp.seasonal <- 
+inla.doc("seasonal")
+airp.seasonal <- inla(formula = l_airp ~ -1 + year + f(ID, model = "seasonal", season.length = 12),
+        family = "gaussian",
+        data = airp.data,
+        control.predictor = list(compute = TRUE),
+        control.family = list(hyper = list(prec =            list(param = c(1, 0.2)))))
 summary(airp.seasonal)
 plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers
      ")
-lines(. , col = "red")
+lines(airp.seasonal$summary.fitted.values$mean , col = "red")
 ```
-
 ```{r Example 3.e}
-#inla.doc("rw")
-airp.rw1 <- 
+inla.doc("rw")
+airp.rw1 <- inla(formula = l_airp ~ -1 + year + f(ID, model = "rw1", scale.model = TRUE),
+        family = "gaussian",
+        data = airp.data,
+        control.predictor = list(compute = TRUE),
+        control.family = list(hyper = list(prec =            list(param = c(1, 0.2)))))
 summary(airp.rw1)
 
-airp.rw2 <- 
+airp.rw2 <- inla(formula = l_airp ~ -1 + year + f(ID, model = "rw2", scale.model = TRUE),
+        family = "gaussian",
+        data = airp.data,
+        control.predictor = list(compute = TRUE),
+        control.family = list(hyper = list(prec =            list(param = c(1, 0.2)))))
 summary(airp.rw2)
 plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers
      ")
-lines(. , col = "purple")
-lines(. , col = "orange")
+lines(airp.rw1$summary.fitted.values$mean , col = "purple")
+lines(airp.rw2$summary.fitted.values$mean , col = "orange", lwd = 2)
 ```
 Now let us consider the fit of all the models.
 ```{r Example 3.f}
 plot(log(airp.data$airp), type = "l", xlab = "Year", ylab = "Log of the count of passengers
      ")
 lines(airp.ar1$summary.fitted.values$mean, col = "blue")
-lines(airp.ar1c$summary.fitted.values$mean, col = "green")
+#lines(airp.ar1c$summary.fitted.values$mean, col = "green")
 lines(airp.seasonal$summary.fitted.values$mean, col = "red")
 lines(airp.rw1$summary.fitted.values$mean, col = "purple")
 lines(airp.rw2$summary.fitted.values$mean, col = "orange")
 ```
+
+##Random walk 2
+```{r}
+x <- seq(-10,10, by = 0.01)
+y = x^2
+
+y <- rnorm(n = length(x), x^2, sd = 10)
+
+plot(x, y)
+
+model_s <- inla(formula = y ~ -1 + f(inla.group(x, n = 100), model = "rw2", scale.model = TRUE, constr = F), data = data.frame(x=x, y=y))
+
+summary(model_s)
+plot(x, y, type= "l")
+lines(model_s$summary.random$`inla.group(x, n = 100)`$ID,
+    model_s$summary.random$`inla.group(x, n = 100)`$mean, col = "blue", lwd = 2)
+
+```
+
+
+
   
