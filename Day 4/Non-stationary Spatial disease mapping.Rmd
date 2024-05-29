@@ -1,0 +1,527 @@
+---
+title: "Advancing public health and data science using INLA - Day 4"
+author: "Janet van Niekerk (janet.vanNiekerk@kaust.edu.sa)"
+output: html_document
+date: "May 2024"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Users/vanniej/Documents/GitHub/INLA-CDC_2023")
+
+library("INLA")
+library("DiagrammeR")
+library("car")
+library("ggpubr")
+library("spdep")
+library("RColorBrewer")
+library("spatstat")
+library("sp")
+library("latticeExtra")
+library("gridExtra")
+library("gstat")
+library("raster")
+library("ggplot2")
+library("ggfortify")
+library("survival")
+library("joineR")
+library("BayesSurvival")
+library("icenReg")
+library("nloptr")
+library("faraway")
+library("lme4")
+library("boot")
+library("rnaturalearth")
+library("leaflet")
+library("viridis")
+library("ggthemes")
+```
+## Leave-group out cross-validation
+We can also do cross-validation as a means of measuring out-of-sample prediction performance (see https://arxiv.org/pdf/2210.04482). LOOCV cannot measure out-of-sample prediction performance for structured models like spatial, temporal, longitudinal models.
+```{r}
+##From Day2 files
+if (T){
+nc.sids <- st_read(system.file("shapes/sids.shp", package="spData"))
+p_hat <- sum(nc.sids$SID74) / sum(nc.sids$BIR74)
+nc.sids$E74 <- p_hat * nc.sids$BIR74
+nc.sids$nwp_hat74 <- nc.sids$NWBIR74 / nc.sids$BIR74
+nc.adj <- poly2nb(nc.sids)
+B.nc <- nb2mat(nc.adj, style = "B")
+nc.sids$CNTY_ID2 <- 1:(length(nc.sids$CNTY_ID))
+}
+
+result1_sids <- inla(SID74 ~ nwp_hat74, data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 4)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "iid"), 
+                     data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 4)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "besagproper", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 4)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result4_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            po = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 4)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result1_sids$gcpo$groups[[1]]
+result2_sids$gcpo$groups[[1]]
+result3_sids$gcpo$groups[[1]]
+result4_sids$gcpo$groups[[1]]
+
+#Plot the "model-based neighbours" for LGOCV
+nc.sids$res1_n <- NA
+nc.sids$res2_n <- NA
+nc.sids$res3_n <- NA
+nc.sids$res4_n <- NA
+
+nc.sids$res1_n[1] <- 1
+nc.sids$res2_n[1] <- 1
+nc.sids$res3_n[1] <- 1
+nc.sids$res4_n[1] <- 1
+
+nc.sids$res1_n[result1_sids$gcpo$groups[[1]]$idx[-1]] <- 2
+nc.sids$res2_n[result2_sids$gcpo$groups[[1]]$idx[-1]] <- 2
+nc.sids$res3_n[result3_sids$gcpo$groups[[1]]$idx[-1]] <- 2
+nc.sids$res4_n[result4_sids$gcpo$groups[[1]]$idx[-1]] <- 2
+
+plot(nc.sids["res1_n"], main = "Model-based 1 neighbours for LGOCV")
+plot(nc.sids["res2_n"], main = "Model-based 2 neighbours for LGOCV")
+plot(nc.sids["res3_n"], main = "Model-based 3 neighbours for LGOCV")
+plot(nc.sids["res4_n"], main = "Model-based 4 neighbours for LGOCV")
+
+#Compute the log-score 
+LS_1 <- -mean(log(result1_sids$gcpo$gcpo))
+LS_2 <- -mean(log(result2_sids$gcpo$gcpo))
+LS_3 <- -mean(log(result3_sids$gcpo$gcpo))
+LS_4 <- -mean(log(result4_sids$gcpo$gcpo))
+
+c(LS_1, LS_2, LS_3, LS_4)
+
+
+```
+## Non-stationary Besag model for areal data
+The joint density function of $\pmb x$ with precision parameters $\tau_1, \tau_2, ...,\tau_P$ is defined as
+    \begin{equation}
+            \pi(\pmb x|\tau_{1}, \ldots, \tau_{P}) \propto \exp\Big(-\dfrac{1}{4} \sum_
+            {\substack{i\text{ in sub-region } k \\ j\text{ in sub-region } l \\ i \sim j \\ i > j }} (\tau_{l} + \tau_{k} )(x_i - x_{j})^2 \Big), \quad  k, l = 1, \ldots, P,
+            \label{eq::besagtype1}
+        \end{equation}
+    \noindent with conditional densities
+       \begin{equation*}
+        x_i |\pmb x_{-i}, \tau_{1}, \ldots, \tau_{P} \sim N \Big(\dfrac{1}{2}\displaystyle \sum_{\substack{i\text{ in sub-region } k \\ j\text{ in sub-region } l \\ i \sim j}} (\tau_{l} + \tau_{k})\tau_{x_i}^{-1} x_j, \tau_{x_i}^{-1}\Big),
+    \end{equation*} and
+    \begin{equation*}
+        \tau_{x_i} = \dfrac{1}{2}\Big(n_{i} \tau_{k}  + \sum_{l} n_{il} \tau_{l}\Big).
+    \end{equation*}
+  
+The joint PC prior for $\pmb\theta = \log\pmb\tau$ can be derived as a convolution of the PC prior for $\tau$ from the Besag model and an i.i.d. prior for the elements of $\pmb\gamma$ such that $\gamma_j\sim N(0, \sigma^2_\gamma)$, as follows
+ \begin{equation}
+         \pi(\pmb \theta) = 2^{-(P + 2)/2} \pi^{-P/2} \lambda \sigma^{-P}  \exp \Big(-\frac{1}{2} (\pmb \theta- \pmb 1 \overline{\theta})^T \tilde{\pmb \Sigma}^{-1} (\pmb \theta- \overline{\theta} \pmb 1) - \overline{\theta}/2 - \lambda e^{-\overline{\theta}/2}\Big),
+         \label{Jointprior}
+    \end{equation}
+
+## Example 
+We analyze the effects of hydrometeorological hazards on dengue risk in Brazil. To test the spatial variations in the spread of the virus in different sub-regions of Brazil, we fit dengue counts with a Poisson regression model as follows,
+\begin{equation}
+    \pmb y \sim \text{Poisson}(\pmb \phi, e^{\pmb \eta}), \quad \pmb \eta = \pmb 1^T \mu + \pmb \alpha 
+    \label{eq:brazildengue}
+\end{equation}
+\noindent where $\pmb y$ is the observed counts in November of dengue cases, $\pmb \phi$ is the expexted number of counts , $\pmb \eta$ is the linear predictor, $\mu$ is the overall intercept, and $\pmb \alpha$ is the Besag (model 0) or flexible Besag model over space. 
+```{r 1}
+load("Data/brazil.RData")
+
+ggplot(map_df) +
+  theme_bw() +
+  geom_sf(fill = NA) 
+```
+The counts are mostly low although some areas have large counts.
+
+```{r 2}
+ggplot(data) +
+  geom_histogram(mapping = aes(Y), bins = 50, color = "black", fill = "grey") + xlim(0,1000) + ylim(0,500) +
+  labs(fill = "") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black")) +
+  labs(x="dengue cases",
+       y="count") 
+
+values <- numeric(558)
+for(i in 1:558) {
+  values[i] <- mean(data$Y[data$S1==i]/exp(data$E[data$S1==i]))}
+
+values[values<0.5] = "0.5"
+values[values>0.5 & values<1] = "1"
+values[values>1 & values<2] = "2"
+values[values>2& values<5] = "3"
+values[values>5] = "4"
+
+custom_palette <- c("#f7776d", "#ffc000", "#2b8ab1", "#bbcf33", "#e76cf2")
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0) +
+  labs(fill = "") +
+  theme_void() +
+  scale_fill_manual(
+    values = custom_palette,
+    breaks = unique(values),
+    labels = c("<0.5", "0.5-1", "1-2", "2-5", "5+")) +  
+  theme(legend.position = "bottom", 
+        legend.title = element_blank(),
+        legend.text = element_text(size=14))
+
+#Plot of neighbors for municipalities 1 and 21
+neigh_graphs <- poly2nb(as(map_df$geometry, "Spatial"), queen = FALSE)
+col_lines <- rep(NA, length(neigh_graphs))
+col_lines[1] = "blue"
+col_lines[21] = "blue"
+
+plot(map_df$geometry, border = "grey")
+plot(neigh_graphs, coords = map_df$geometry, col = col_lines, add = T, cex = 0.1)
+  
+```
+Now the question arises, how do we find groupings?
+```{r 3}
+ggplot(map_df) +
+  geom_sf(aes(fill = biome_name), lwd = 0) +
+  labs(fill = "") 
+
+ggplot(map_df) +
+  geom_sf(aes(fill = region_name), lwd = 0)  +
+  labs(fill = "") 
+
+```
+We can formulate the flexible Besag model next.
+```{r 4}
+#Function of fbesag - usually in the fbesag library
+if (T){
+'inla.rgeneric.fbesag.model' <- function(
+    cmd = c("graph", "Q", "mu", "initial", "log.norm.const",
+            "log.prior", "quit"),
+    theta = NULL) {
+  
+  sbesag <- function(R, prec, id_p, scaled_cnst, npart){
+    
+    get_ij <- function(g){
+      
+      ii <- c(); jj <- c()
+      for(i in 1:g$n){
+        ii <- c(ii,rep(i,g$nnbs[i]), i)
+        jj <- c(jj,g$nbs[[i]], i)
+      }
+      return(list(i=ii,j=jj))
+    }
+    
+    g <- inla.read.graph(R)
+    
+    x_scaled = c()
+    for(i in 1:g$n){
+      tmp <- -0.5*prec[c(id_p[g$nbs[[i]]])]
+      mas_prec <- prec[id_p[i]]
+      x_scaled <- c(x_scaled, tmp - 0.5*mas_prec, -sum(tmp) + 0.5*g$nnbs[i]*mas_prec + 1e-5)
+    }
+    r <- get_ij(g)
+    return(sparseMatrix(i = r$i, j = r$j, x = scaled_cnst*x_scaled))
+  }
+  
+  npart <- length(unique(id_p))
+  dim_theta <- npart
+  
+  interpret.theta <- function() {
+    res <- list()
+    for(i in 1:dim_theta){
+      res[[i]] = exp(theta[i])
+    }
+    return(res)
+  }
+  
+  graph <- function(){
+    require(Matrix)
+    return(Matrix(W,sparse=TRUE))
+  }
+  
+  Q <- function() {
+    res <- interpret.theta()
+    prec = c()
+    for(i in 1:dim_theta){
+      prec = c(prec, res[[i]])
+    }
+    
+    myR <- sbesag(W, prec, id_p, scaled_cnst=scaled_cnst, npart)
+    return(inla.as.sparse(myR))
+  }
+  
+  mu <- function(){return(numeric(0))}
+  
+  log.norm.const <- function() {
+    return (numeric(0))
+  }
+  
+  log.prior <- function() {
+    
+    #p1 = 1; p2 = 1e-5 
+    p1 = 0.5; p2 = 0.01
+    
+    lam <- - log(p2)/p1
+    res <- interpret.theta()
+    prec = c()
+    for(i in 1:dim_theta){
+      prec = c(prec, res[[i]])
+    }
+    
+    theta_p = log(prec)
+    sigm2 <- sd_sim^2
+    
+    mean_theta <- mean(theta_p)
+    P = npart
+    e = eigen(diag(P) - (1/P)*matrix(1,P,P))
+    D = diag(c(1.0/e$values[1:(P-1)]))
+    inv_tilda_Sigma = (1/sigm2)*e$vectors[,1:(P-1)]%*%D%*%t(e$vectors[,1:(P-1)])
+    
+    res1 <- log(lam) - (lam)*exp(-0.5*mean_theta) -0.5*mean_theta
+    res2 <- -0.5*(theta_p-mean_theta)%*%inv_tilda_Sigma%*%(theta_p-mean_theta)
+    res <- drop(res1) + drop(res2) 
+    return(res)
+    
+    
+  }
+  
+  initial <- function() {
+    #return(initial_theta)
+    return(rep(4,npart))
+  }
+  
+  quit <- function() {
+    return(invisible())
+  }
+  
+  res <- do.call(match.arg(cmd), args = list())
+  return(res)
+}
+}
+
+#Model setup - usually in the fbesag library
+constr.inter <- list(A = matrix(1,1,dim(graph)[1]), e = rep(0, 1))
+scaled_graph = as.matrix(INLA:::inla.scale.model(graph,constr.inter))
+scaled_cnst = scaled_graph[1,1]/graph[1,1]
+
+Six_terrestrial_biomes = T
+id_regions <- c()
+if(Six_terrestrial_biomes){
+  id_regions <- data$S4
+  id_regions[which(id_regions==3)] = 2
+  id_regions[which(id_regions==4)] = 3
+  id_regions[which(id_regions==5)] = 4
+  id_regions[which(id_regions==6)] = 5
+}else{
+  id_regions <- data$S3
+}
+
+#PC prior setup
+precision.prior <- list(prec = list(prior = "pc.prec", param = c(0.5, 0.01)))
+
+#Define the matrices according to fbesag
+fbesag.model <- inla.rgeneric.define(inla.rgeneric.fbesag.model, W = graph, id_p = id_regions ,scaled_cnst = scaled_cnst, sd_sim = 0.15)
+
+config = FALSE
+baseformula <- Y ~ 1 + f(S1,model="generic0", Cmatrix= scaled_graph, constr= TRUE, rankdef = 1,hyper = precision.prior) +
+                       f(T1, model = "rw1", constr = TRUE,  scale.model = TRUE, hyper =  list(prec = list(prior = "pc.prec", param = c(0.5, 0.01)))) 
+                     
+formula <- Y ~ 1 + f(S1, model = fbesag.model, constr= TRUE, rankdef=1) + 
+                       f(T1, model = "rw1", constr = TRUE, scale.model = TRUE, hyper = precision.prior) 
+
+#For computation time we use int.strategy = "eb"
+#Usual besag model
+model_naive <- inla(formula = baseformula, data = data, family = "poisson", offset = log(E),
+                    control.inla = list(strategy = 'gaussian', int.strategy = "eb"), 
+                    control.compute = list(dic = TRUE, config = config, 
+                                           cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable =       TRUE, num.level.sets = 2)),
+                    control.fixed = list(correlation.matrix = TRUE, 
+                                         prec.intercept = 1, prec = 1),
+                    control.predictor = list(link = 1, compute = TRUE))
+
+#fbesag model
+model_fbesag <- inla(formula = formula, data = data, family = "poisson", offset = log(E),
+                     control.inla = list(strategy = 'gaussian', int.strategy = "eb"), 
+                     control.compute = list(dic = TRUE, config = config, 
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE, num.level.sets = 2)),
+                     control.fixed = list(correlation.matrix = TRUE, 
+                                          prec.intercept = 1, prec = 1),
+                     control.predictor = list(link = 1, compute = TRUE))
+
+```
+The results are as follows:
+```{r 5}
+results <- data.frame(
+  Row = c("stationary", "non-stationary", "Better?"),
+  DIC = c(0, 0, 0),
+  CPO = c(0, 0, 0),
+  GCPO = c(0, 0, 0),
+  logML = c(0, 0, 0)
+)
+
+#DIC
+results$DIC[1] <- round(model_naive$dic$dic,0)
+results$DIC[2] <- round(model_fbesag$dic$dic,0)
+results$DIC[3] <- round(model_fbesag$dic$dic,0) < round(model_naive$dic$dic,0)
+
+#logML
+results$logML[1] <- model_naive$mlik[1]
+results$logML[2] <- model_fbesag$mlik[1]
+results$logML[3] <- model_fbesag$mlik[1] > model_naive$mlik[1]
+
+#gcpo
+results$GCPO[1] <- -mean(log(model_naive$gcpo$gcpo[!is.na(model_naive$gcpo$gcpo)])) 
+results$GCPO[2] <- -mean(log(model_fbesag$gcpo$gcpo[!is.na(model_naive$gcpo$gcpo)]))
+results$GCPO[3] <- -mean(log(model_fbesag$gcpo$gcpo[!is.na(model_naive$gcpo$gcpo)])) < -mean(log(model_naive$gcpo$gcpo[!is.na(model_naive$gcpo$gcpo)])) 
+
+results$CPO[1] <- -mean(log(model_naive$cpo$cpo[!is.na(model_naive$cpo$cpo)])) 
+results$CPO[2] <- -mean(log(model_fbesag$cpo$cpo[!is.na(model_naive$cpo$cpo)]))
+results$CPO[3] <- -mean(log(model_fbesag$cpo$cpo[!is.na(model_naive$cpo$cpo)])) < -mean(log(model_naive$cpo$cpo[!is.na(model_naive$cpo$cpo)])) 
+
+ch <- id_regions[1:558]
+means <- numeric(5)
+for(i in 1:5){
+  means[i] <- mean(abs(model_fbesag$summary.random$S1$mean[ch==i] - model_naive$summary.random$S1$mean[ch==i]))
+}
+
+f1_mean <- model_naive$internal.summary.hyperpar$mean[1]
+f2_mean <- model_fbesag$internal.summary.hyperpar$mean[1:5]
+
+f1_sd <- model_naive$internal.summary.hyperpar$sd[1]
+f2_sd <- model_fbesag$internal.summary.hyperpar$sd[1:5]
+
+
+print(means)
+print(results)
+f1_mean - f2_mean
+f1_sd - f2_sd
+
+```
+
+Let's visualize some of the results.
+```{r}
+#Estimated tau values
+values <- numeric(558)
+diff_m1 <- model_fbesag$internal.summary.hyperpar$mean[1:5]
+for(i in 1:558) values[i] <- mean(diff_m1[id_regions[neigh_graphs[[i]]]])
+
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0) +
+  scale_fill_gradient_tableau("Blue-Teal") +
+  labs(fill = expression(tau[i])) +
+  theme_void() 
+
+```
+```{r}
+#Estimated differences of the tau's
+values <- numeric(558)
+diff_m1 <- c(model_fbesag$internal.summary.hyperpar$mean[1:5]) - c(model_naive$internal.summary.hyperpar$mean[1])
+for(i in 1:558) values[i] <- mean(diff_m1[id_regions[neigh_graphs[[i]]]])
+
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  labs(fill = "")  +
+  theme_void()  
+```
+```{r}
+#Estimated differences of the SD's of tau
+values <- numeric(558)
+diff_m1 <- c(model_fbesag$internal.summary.hyperpar$sd[1:5]) - c(model_naive$internal.summary.hyperpar$sd[1])
+for(i in 1:558) values[i] <- mean(diff_m1[id_regions[neigh_graphs[[i]]]])
+
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  labs(fill = "") +
+  theme_void()  
+
+```
+We can also look at the posterior mean of the random effect from the two models.
+```{r}
+#Fitted values
+values <- numeric(558)
+values <- model_naive$summary.random$S1$mean
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0.1) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  labs(fill = "") +
+  ggtitle("Posterior mean of x - Besag") +
+  theme_void()
+
+values <- numeric(558)
+values <- model_fbesag$summary.random$S1$mean
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0.1) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  labs(fill = "") +
+  ggtitle("Posterior mean of x - fBesag") +
+  theme_void()
+```
+We can also look at the difference between the random effects estimated from the stationary and non-stationary model.
+```{r}
+#Difference in x between the two models
+values <- numeric(558)
+values <- c(model_fbesag$summary.random$S1$mean) - c(model_naive$summary.random$S1$mean)
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0.1) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  labs(fill = "") +
+  ggtitle("Difference in the posterior mean of x") +
+  theme_void()
+
+#97.5quantile
+values <- numeric(558)
+values <- c(model_fbesag$summary.random$S1$'0.975quant') - c(model_naive$summary.random$S1$'0.975quant')
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0.1) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  labs(fill = "") +
+  ggtitle("Difference in 97.5th percentile of x") +
+  theme_void()
+
+#2.5quantile
+values <- numeric(558)
+values <- c(model_fbesag$summary.random$S1$'0.025quant') - c(model_naive$summary.random$S1$'0.025quant')
+
+ggplot(map_df) +
+  geom_sf(aes(fill = values), lwd = 0.1) +
+  scale_fill_gradient2(low = "#49B8F1",
+                       mid = "white",
+                       high = "red") +
+  ggtitle("Difference in 2.5th percentile of x") +
+  labs(fill = "") +
+  theme_void()
+```
