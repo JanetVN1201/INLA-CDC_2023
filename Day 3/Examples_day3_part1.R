@@ -32,6 +32,8 @@ summary(M1.wei)
 M1.exp_2 <- joint(formSurv = inla.surv(years, death) ~ drug + sex,
                   dataSurv = SurvData, basRisk="exponentialsurv")
 summary(M1.exp_2)
+inla.zmarginal(inla.tmarginal(function(x) exp(x), M1.exp$marginals.fixed$`(Intercept)`))
+
 summary(M1.exp_2, hr=TRUE) # hazard ratios instead of betas
 
 # Weibull baseline risk
