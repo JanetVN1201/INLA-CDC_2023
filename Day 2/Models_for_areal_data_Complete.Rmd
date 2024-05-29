@@ -1,0 +1,852 @@
+---
+title: "Advancing public health and data science using INLA - Day 2"
+author: "Janet van Niekerk (janet.vanNiekerk@kaust.edu.sa)"
+output: html_document
+date: "May 2024"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Users/vanniej/Documents/GitHub/INLA-CDC_2023")
+
+library("INLA")
+library("DiagrammeR")
+library("car")
+library("ggpubr")
+library("spdep")
+library("RColorBrewer")
+library("spatstat")
+library("sp")
+library("latticeExtra")
+library("gridExtra")
+library("gstat")
+library("raster")
+library("ggplot2")
+library("ggfortify")
+library("survival")
+library("joineR")
+library("BayesSurvival")
+library("icenReg")
+library("nloptr")
+library("boot")
+library("rnaturalearth")
+library("leaflet")
+```
+
+## Spatial models for areal data
+
+Intro to lattice and irregular lattice
+
+## Example 1 - Besag and Besagproper models
+```{r eval=FALSE, echo = TRUE}
+inla.doc("besag")
+```
+
+In this example we use the North Carolina Sudden Infant Death Syndrome dataset.
+```{r Example 1.a}
+data(nc.sids)
+head(nc.sids)
+hist(nc.sids$SID74)
+summary(nc.sids)
+nc.sids <- st_read(system.file("shapes/sids.shp", package="spData"))
+
+```
+We see that the number of deaths is a count variable and therefore propose a Poisson regression model, i.e. 
+$$y\sim Poi(E\theta)$$
+with $$\theta = \exp(\eta)$$ and $E$ is the expected count. In this way, $\theta$ indicates the risk. We need to calculate the expected count for each observation,
+```{r Example 1.b}
+p_hat <- sum(nc.sids$SID74) / sum(nc.sids$BIR74)
+nc.sids$E74 <- p_hat * nc.sids$BIR74
+```
+We use the NWBIR as a covariate to investigate if it has any influence on the risk of SIDS. We consider the proportion instead of the count,
+```{r Example 1.c}
+nc.sids$nwp_hat74 <- nc.sids$NWBIR74 / nc.sids$BIR74
+```
+Adding a random intercept adds an independent effect, although the counties are probably not independent in terms of socio-economic diversity. So we should rather include a structured random effect such that some "intercepts" are correlated with each other, conveying the dependence in space. Since we have space divided into discrete non-overlapping parts, we can use a Besag or BYM model.
+```{r Example 1.d}
+#Add besag for counties - a spatial model
+#Graph - neighbourhood structure
+nc.adj <- poly2nb(nc.sids)
+B.nc <- nb2mat(nc.adj, style = "B")
+
+plot(nc.sids$geometry, border="grey")
+plot(nc.adj, coords = nc.sids$geometry,  add = TRUE, col = "blue")
+
+#Add covariate to spatial dataset    
+nc.sids$CNTY_ID2 <- 1:(length(nc.sids$CNTY_ID))
+
+#Fit the spatial model
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "besagproper", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+```
+The posterior summary is
+```{r Example 1.e}
+summary(result3_sids)
+```
+The two extra hyperparameters from the besagproper effect are the marginal standard deviation, $\sigma$ and the properness parameter, $d$, and their marginal posteriors are
+```{r Example 1.f}
+res3_sd_bym <- inla.tmarginal(function(x) sqrt(1/x), result3_sids$marginals.hyperpar$`Precision for CNTY_ID2`)
+plot(res3_sd_bym, type = "l", xlab = expression(sigma), ylab = expression(paste("f(", sigma ,"|y)")))
+
+plot(result3_sids$marginals.hyperpar$`Diagonal for CNTY_ID2`, type = "l", xlab = "d", ylab = "f(d|y)")
+
+```
+We can again visually see the fit of the predictions from the model to the data,
+```{r Example 1.ga}
+nc.sids$fit_besag <- result3_sids$summary.fitted.values$mean*nc.sids$E74
+plot(nc.sids["SID74"], breaks = seq(0,50, by = 5), main = "Observed counts")
+plot(nc.sids["fit_besag"], breaks = seq(0,50, by = 5), main = "Predicted counts")
+
+plot(nc.sids$SID74, ylab = "SIDS Counts")
+points(nc.sids$E74*result3_sids$summary.fitted.values[,1], col = "purple", pch = 8, cex = 0.8)
+```
+When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
+```{r Example 1.h}
+result1_sids <- inla(SID74 ~ nwp_hat74, data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "iid"), 
+                     data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "besagproper", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
+            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
+            cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1])), 
+            nrow = 3, ncol = 3,
+            dimnames = list(c("Model 1", "Model 2 - iid", "Model 3 - Besag"),
+                            c("Marginal log-likelihood", "DIC", "WAIC")
+                            )))
+```
+Let's visualise the fitted values of all the models.
+```{r Example 1.g}
+nc.sids$fit_besag <- result3_sids$summary.fitted.values$mean*nc.sids$E74
+nc.sids$fit_fixed <- result1_sids$summary.fitted.values$mean*nc.sids$E74
+nc.sids$fit_iid <- result2_sids$summary.fitted.values$mean*nc.sids$E74
+plot(nc.sids["SID74"], breaks = seq(0,50, by = 5), main = "Observed counts")
+plot(nc.sids["fit_fixed"], breaks = seq(0,50, by = 5), main = "Predicted counts - fixed")
+plot(nc.sids["fit_iid"], breaks = seq(0,50, by = 5), main = "Predicted counts - iid")
+plot(nc.sids["fit_besag"], breaks = seq(0,50, by = 5), main = "Predicted counts - besag")
+
+
+plot(nc.sids$SID74, ylab = "SIDS Counts")
+points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
+points(nc.sids$E74*result2_sids$summary.fitted.values[,1], col = "red", pch = 19, cex = 0.5)
+points(nc.sids$E74*result3_sids$summary.fitted.values[,1], col = "purple", pch = 8, cex = 0.8)
+```
+
+
+## Example 2 - BYM and BYM2 models
+```{r eval=FALSE, echo = TRUE}
+inla.doc("bym")
+inla.doc("bym2")
+```
+Let's revisit the NC SIDS dataset example.  
+Now we add a BYM effect for the different counties,
+```{r Example 2.a}
+result4_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+```
+The posterior summary is
+```{r Example 2.b}
+summary(result4_sids)
+```
+The two hyperparameters from the BYM effect are the marginal standard deviation, $\sigma$ and the weight parameter, $\phi$, and their marginal posteriors are
+```{r Example 2.c}
+res4_sd_bym <- inla.tmarginal(function(x) sqrt(1/x), result4_sids$marginals.hyperpar$`Precision for CNTY_ID2`)
+plot(res4_sd_bym, type = "l", xlab = expression(sigma), ylab = expression(paste("f(", sigma ,"|y)")))
+plot(result4_sids$marginals.hyperpar$`Phi for CNTY_ID2`, type = "l", xlab = expression(phi), ylab = expression(paste("f(", phi ,"|y)")))
+```
+We can again visually see the fit of the predictions from the model to the data,
+```{r Example 2.d}
+nc.sids$fit_bym <- result4_sids$summary.fitted.values$mean*nc.sids$E74
+plot(nc.sids[c("SID74", "fit_fixed", "fit_iid", "fit_besag", "fit_bym")],
+       breaks = seq(0, 50, by = 5),
+     main = "Observed and predicted counts")
+
+plot(nc.sids$SID74, ylab = "SIDS Counts")
+points(nc.sids$E74*result1_sids$summary.fitted.values[,1], col = "blue", pch = 10)
+points(nc.sids$E74*result2_sids$summary.fitted.values[,1], col = "red", pch = 19, cex = 0.5)
+points(nc.sids$E74*result3_sids$summary.fitted.values[,1], col = "purple", pch = 8, cex = 0.8)
+points(nc.sids$E74*result4_sids$summary.fitted.values[,1], col = "darkgreen", pch = 2, cex = 0.8)
+```
+We can visualise the spatial and specific effects as well.
+```{r Example 2.e}
+nc.sids$bym <- result4_sids$summary.random$CNTY_ID2[1:max(nc.sids$CNTY_ID2),"mean"]
+plot(nc.sids[c("bym")],
+       breaks = seq(-0.4,0.4, by = 0.05),
+     main = "BYM component")
+
+nc.sids$bym_besag <- result4_sids$summary.random$CNTY_ID2[1:max(nc.sids$CNTY_ID2)+max(nc.sids$CNTY_ID2),"mean"]
+plot(nc.sids[c("bym_besag")],
+       breaks = seq(-1,1, by = 0.1),
+     main = "Besag component")
+
+nc.sids$bym_iid <- (result4_sids$summary.random$CNTY_ID2[1:max(nc.sids$CNTY_ID2),"mean"]*
+  sqrt(result4_sids$summary.hyperpar["Precision for CNTY_ID2", "mean"]) -
+  result4_sids$summary.random$CNTY_ID2[1:max(nc.sids$CNTY_ID2)+max(nc.sids$CNTY_ID2),"mean"]*
+  sqrt(result4_sids$summary.hyperpar["Phi for CNTY_ID2", "mean"]))/
+(1-sqrt(result4_sids$summary.hyperpar["Phi for CNTY_ID2", "mean"]))
+
+plot(nc.sids[c("bym_iid")],
+       breaks = seq(-3,3, by = 0.1),
+     main = "IID component")
+
+```
+
+When we compare the fit between models we can look at the marginal log-likelihoods, DIC or WAIC.
+```{r Example 2.f}
+print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1]),
+            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1]),
+            cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1]),
+            cbind(result4_sids$mlik[1], result4_sids$dic[1], result4_sids$waic[1])), 
+            nrow = 4, ncol = 3,
+            dimnames = list(c("Model 1", "Model 2 - iid", "Model 3 - Besag", "Model 4 - BYM"),
+                            c("Marginal log-likelihood", "DIC", "WAIC")
+                            )))
+```
+We can also do cross-validation as a means of measuring prediction performance (see https://arxiv.org/pdf/2210.04482).
+
+```{r Example 2.cv}
+result1_sids <- inla(SID74 ~ nwp_hat74, data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 3)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result2_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "iid"), 
+                     data = nc.sids, 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 3)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result3_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "besagproper", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            cpo = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 3)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result4_sids <- inla(SID74 ~ nwp_hat74 + f(CNTY_ID2, model = "bym2", graph = B.nc), 
+                     data = as.data.frame(nc.sids), 
+                     family = "poisson",
+                     control.compute = list(dic = TRUE, waic = TRUE,
+                                            po = TRUE, return.marginals = FALSE, control.gcpo = list(enable = TRUE,num.level.sets = 3)),
+                     control.predictor = list(compute = TRUE),
+                     E = E74)
+
+result1_sids$gcpo$groups[[1]]
+result2_sids$gcpo$groups[[1]]
+result3_sids$gcpo$groups[[1]]
+result4_sids$gcpo$groups[[1]]
+
+```
+
+The results for the model selection and validation are:
+```{r Example 2.mselect}
+print(matrix(rbind(cbind(result1_sids$mlik[1], result1_sids$dic[1], result1_sids$waic[1], mean(result1_sids$gcpo$gcpo)),
+            cbind(result2_sids$mlik[1], result2_sids$dic[1], result2_sids$waic[1], mean(result2_sids$gcpo$gcpo)),
+            cbind(result3_sids$mlik[1], result3_sids$dic[1], result3_sids$waic[1], mean(result3_sids$gcpo$gcpo)),
+            cbind(result4_sids$mlik[1], result4_sids$dic[1], result4_sids$waic[1], mean(result4_sids$gcpo$gcpo))), 
+            nrow = 4, ncol = 4,
+            dimnames = list(c("Model 1", "Model 2 - iid", "Model 3 - Besag", "Model 4 - BYM"),
+                            c("Marginal log-likelihood", "DIC", "WAIC", "G-CV score")
+                            )))
+
+```
+
+## Example 3 - Joint disease mapping models (using Besag2 model)
+We can do multivariate disease mapping when we take into account the effect of the presence or absence of other diseases simultaneously. These are treated as endogenous variables.
+\begin{eqnarray*}
+y_{i 1}|\lambda_{i1} &\sim& \text { Poisson }\left(E_{i 1} \lambda_{i 1}\right)\\ 
+y_{i 2}|\lambda_{i2} &\sim& \text { Poisson }\left(E_{i 2} \lambda_{i 2}\right) \\
+\log (\lambda_{i 1}) &=& m_{1} + \sum_{f = 1}^{F_1} \beta_f X_{i f} + \sum_{r=1}^{R_1} \rho^r(u_{i r}) + b_{i 1} + S_{i}\\
+\log (\lambda_{i 2}) &=& m_{2} + \sum_{f = 1}^{F_2} \gamma_f Z_{i f} + \sum_{r=1}^{R_2} \xi^r(v_{i r})+ b_{i 2}  + a \, S_{i}, 
+\label{eq:jointmeanmodel}
+\end{eqnarray*}
+```{r pre-work}
+# read data 
+merg.data <- readRDS("Data/MAP_data.RDS")
+
+# The map 
+map <- ne_countries(returnclass = "sf")
+
+# Extract the map and compile the shape
+if (T){
+names(map)[names(map) == "iso_a3"] <- "ISO3"
+names(map)[names(map) == "name"] <- "NAME"
+map <- map[order(map$name_long),]
+map$name_long[grepl("Gambia", map$name_long)] <- "Gambia"
+map$name_long[map$name_long == "Republic of the Congo"] <- "Congo"
+
+map <- map[order(map$name_long),]
+
+# Select only the common countries from the map
+sub_map <- match(map$name_long , merg.data$Common.countries)
+map$cc <- sub_map
+map_2 <- subset(map,map$cc!="NA" )
+map_2 <- map_2[order(map_2$name_long),]
+
+map_2$D.E = merg.data$D.E
+map_2$M.E = merg.data$M.E
+map_2$M.cases = merg.data$M.cases
+map_2$D.cases = merg.data$D.cases
+map_2$M.pop = merg.data$M.pop
+map_2$D.pop = merg.data$D.pop
+
+
+library(cleangeo)
+rr <- clgeo_CollectionReport(map_2)
+summary(rr)
+issues <- rr[rr$type == NA,]
+map_2_c <- clgeo_Clean(map_2)
+}
+
+# Neighbourhood graph
+nb <- poly2nb(map_2_c)
+nb2INLA("Day 2/map.adj",nb = nb)
+g <- inla.read.graph(filename = "Day 2/map.adj")
+map_2$ID = 1:length(map_2_c$level)
+
+par(mar = c(0,0,0,0))
+plot(map$geometry[map$continent == "Africa"], border = "grey")
+plot(map_2_c, add = TRUE)
+text(coordinates(map_2_c)[,1], coordinates(map_2_c)[,2], label = map_2$ID)
+plot(nb, coords = map_2_c,  add = TRUE, col = "blue", pch = 1, cex = 0.01)
+
+#Edit the graph to manually connect 12 and 14 & 15 and 8
+if (F){
+ind = c(12,14,15,8)
+g1 = g
+g1$nnbs[ind]=g1$nnbs[ind] + 1
+g1$nbs[[12]] = c(g1$nbs[[12]], 14)
+g1$nbs[[14]] = c(g1$nbs[[14]], 12)
+g1$nbs[[15]] = c(g1$nbs[[15]], 8)
+g1$nbs[[8]] = c(g1$nbs[[8]], 15)
+g1$cc$id = rep(1, g1$n)
+g1$cc$n = 1
+g1$cc$nodes = 1:g1$n
+g1$cc$mean = rep(1, g1$n)
+  
+plot(g)
+dev.off()
+plot(g1)
+}
+#OR edit the neighbourhood
+if (F){
+  nb1 <- nb
+  nb1[[12]] <- as.integer(c(14))
+  nb1[[14]] <- as.integer(c(nb[[14]], 12), length = length(nb[[14]])+1)
+  nb1[[8]] <- as.integer(c(nb[[8]], 15), length = length(nb[[8]])+1)
+  nb1[[15]] <- as.integer(c(nb[[15]], 8), length = length(nb[[15]])+1)
+
+  par(mar = c(0,0,0,0))
+plot(map$geometry[map$continent == "Africa"], border = "grey")
+plot(map_2_c, add = TRUE)
+text(coordinates(map_2_c)[,1], coordinates(map_2_c)[,2], label = map_2_c$ID)
+plot(nb1, coords = map_2_c,  add = TRUE, col = "blue", pch = 1, cex = 0.01)
+
+nb2INLA("Day 2/map1.adj",nb = nb1)
+g1_alt <- inla.read.graph(filename = "Day 2/map1.adj")
+
+plot(g1)
+dev.off()
+plot(g1_alt)
+  }
+
+
+```
+Now we can model Malaria and G6PD mean incidence jointly by sharing a common spatial field using *besag2* (see https://doi.org/10.1098/rsos.230851).
+```{r}
+b = length(merg.data$M.cases)
+y1 = c(merg.data$M.cases , rep(NA,b))
+y2 = c(rep(NA,b) , merg.data$D.cases)
+
+E1 = c(merg.data$M.E,rep(NA,b))
+E2 = c(rep(NA,b) , merg.data$D.E)
+
+yy = cbind(y1,y2)
+EE = cbind(E1, E2)
+mu = c(rep(1, b) , rep(2,b))
+b1 = c(1:b,rep(NA ,b))
+b2 = c(rep(NA,b),1:b)
+
+ID = c(1:b , rep(NA ,b))
+
+ID_copy = c(rep(NA , b), 1:b + b)
+
+m = as.factor(mu)
+d = data.frame(yy, m, ID, ID_copy, b1, b2)  
+
+formula = yy ~ -1 + m + offset(log(E1))+ offset(log(E2))+
+  f(ID, model = "besag2", graph=g, scale.model = T)+
+  f(ID_copy, copy="ID", hyper = list(beta = list(fixed = TRUE)))+
+  f(b1 , model = "bym2", graph=g, scale.model=TRUE)+
+  f(b2, model = "bym2", graph=g, scale.model=TRUE)
+
+r1 <- inla(formula,
+           family = c("poisson","poisson"),
+           data = d,
+           verbose = F,
+           control.predictor = list(compute = T))
+
+round(r1$summary.fixed[,c(1:3,5)],3)
+
+round(r1$summary.hyperpar[,c(1,3,5,6)],3)
+```
+We can plot the relative risk from the model.
+```{r}
+#Fitted values
+map_2$fit_besag2_m <- r1$summary.fitted.values[1:b,"mean"]/map_2$M.E
+map_2$fit_besag2_g <- r1$summary.fitted.values[1:b+b,"mean"]/map_2$D.E
+
+l <- leaflet(map_2) %>% addTiles()
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$fit_besag2_m)-0.5,max(map_2$fit_besag2_m)+0.5 , by = 0.1))
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$fit_besag2_m), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values= ~seq(min(map_2$fit_besag2_m)-0.5,max(map_2$fit_besag2_m)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "RR from besag2 model for malaria",
+            position = "topright")
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$fit_besag2_g)-0.5,max(map_2$fit_besag2_g)+0.5 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$fit_besag2_g), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$fit_besag2_g)-0.5,max(map_2$fit_besag2_g)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "RR from besag2 model for G6PD",
+            position = "topright")
+
+
+#Common spatial field
+map_2$besag_field <- r1$summary.random$ID$mean[1:b]*r1$summary.hyperpar["Scale paramter a for ID", "mean"]
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$besag_field)-0.5,max(map_2$besag_field)+0.5 , by = 0.1))
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$besag_field), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$besag_field)-0.5,max(map_2$besag_field)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "Common spatial field",
+            position = "topright")
+
+
+#Disease-specific BYM effects
+map_2$bym2_m <- r1$summary.random$b1$mean[1:b] 
+map_2$bym2_g <- r1$summary.random$b2$mean[1:b] 
+
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$bym2_m)-0.5,max(map_2$bym2_m)+0.5 , by = 0.1))
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$bym2_m), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$bym2_m)-0.5,max(map_2$bym2_m)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "BYM values for malaria",
+            position = "topright")
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$bym2_g)-0.5,max(map_2$bym2_g)+0.5 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$bym2_g), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$bym2_g)-0.5,max(map_2$bym2_g)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "BYM values for G6PD",
+            position = "topright")
+
+
+```
+
+```{r, eval = F}
+
+#Disease-specific Besag effects
+map_2$bym2_m <- r1$summary.random$b1$mean[b+1:b] 
+map_2$bym2_g <- r1$summary.random$b2$mean[b+1:b] 
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$bym2_m)-0.5,max(map_2$bym2_m)+0.5 , by = 0.1))
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$bym2_m), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$bym2_m)-0.5,max(map_2$bym2_m)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "Besag values for malaria",
+            position = "topright")
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(min(map_2$bym2_g)-0.5,max(map_2$bym2_g)+0.5 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$bym2_g), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$bym2_g)-0.5,max(map_2$bym2_g)+0.5 , by = 0.1), 
+            opacity = 0.5, title = "Besag values for G6PD",
+            position = "topright")
+
+# the iid for malaria
+map_2$vm = (r1$summary.random$b1$mean[1:21] * sqrt(r1$summary.hyperpar$mode[3]) -  
+             r1$summary.random$b1$mean[22:42] * sqrt(r1$summary.hyperpar$mode[4])) / 
+  sqrt(1 - r1$summary.hyperpar$mode[4])
+
+range(map_2$vm)
+
+pal <- colorNumeric(palette = "YlOrRd", domain = seq(min(map_2$vm)-0.2, max(map_2$vm) + 0.5 , by = 0.1))
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$vm), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$vm)-0.2, max(map_2$vm) + 0.5 , by = 0.1), 
+            opacity = 0.5, title = "IID of Malaria",
+            position = "topright")
+
+
+# iid effect for g6pd
+map_2$v = (r1$summary.random$b2$mean[1:21] * sqrt(r1$summary.hyperpar$mode[5]) -  
+              r1$summary.random$b2$mean[22:42] * sqrt(r1$summary.hyperpar$mode[6])) / 
+              sqrt(1 - r1$summary.hyperpar$mode[6])
+
+pal <- colorNumeric(palette = "YlOrRd", domain = seq(min(map_2$v)-0.2, max(map_2$v) + 0.5 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$v), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(min(map_2$v)-0.2, max(map_2$v) + 0.5 , by = 0.1), 
+            opacity = 0.5, title = "IID for G6PD",
+            position = "topright")
+
+
+
+```
+## Example 4 - Quantile models for disease mapping
+Now we can also do quantile modeling, instead of the mean risk we can model the high risk areas only and see if there are different covariate impacts for the higher levels of risk. 
+
+\begin{eqnarray}
+y_{i 1}|\lambda_{i1} &\sim& \text { Poisson }\left(E_{i1}\lambda_{i 1}\right) \notag\\
+y_{i 2}|\lambda_{i2} &\sim& \text { Poisson }\left(E_{i2}\lambda_{i 2}\right) \notag\\
+\log (q_{i 1, \alpha_{1}}) &=& \eta_{i 1,\alpha_{1}} =  m_{1} + \sum_{f = 1}^{F_1} \beta_f X_{i f} + \sum_{r=1}^{R_1} \rho^r(u_{i r}) + b_{i 1} + S_{i} \notag \\
+\log (q_{i 2,\alpha_{2}}) &=& \eta_{i 2,\alpha_{2}} = m_{2} + \sum_{f = 1}^{F_2} \gamma_f Z_{i f} + \sum_{r=1}^{R_2} \xi^r(v_{i r})+ b_{i 2}  + c \, S_{i},\label{qa2}
+\end{eqnarray}. 
+In INLA we only need to add the special link function as follows:  
+control.family = list(control.link = list(model = "quantile", quantile = alpha)). 
+                                                      
+First we model the malaria incidence quantile and thereafter the G6PD incidence, while ignoring a shared effect.
+
+
+```{r pre, eval = T}
+alpha0 = 0.8
+r.m <- inla(formula = map_2$M.cases ~ 1 + offset(log(map_2$M.E)) +
+              f(b1, model = "bym2", scale.model = T,
+                graph = g)   ,
+            family = "poisson",
+            data =  merg.data,
+            control.predictor = list(compute = T),
+            control.family = list(control.link = list(model = "quantile",
+                                                      quantile = alpha0)),
+            verbose = F)
+
+round(r.m$summary.hyperpar[,c(1,3,5,6)],3)
+
+
+```
+
+
+```{r}
+# the quantile for G6PD only
+r.d <- inla(formula = map_2$D.cases ~ 1 + offset(log(map_2$D.E))+
+              f(b2,model = "bym2", scale.model = T,
+                graph = g)  ,
+            family = "poisson",
+            data =  merg.data,
+            control.predictor = list(compute = T),
+            control.family = list(control.link = list(model = "quantile",
+                                                      quantile = alpha0)),
+            verbose = F)
+
+round(r.d$summary.hyperpar[,c(1,3,5,6)],3)
+```
+Visualize the effects.
+```{r}
+# the iid EFFECT malaria
+map_2$vm2 = (r.m$summary.random$b1$mean[1:21] * sqrt(r.m$summary.hyperpar$mode[1]) -  
+              r.m$summary.random$b1$mean[22:42] * sqrt(r.m$summary.hyperpar$mode[2])) / 
+  sqrt(1 - r.m$summary.hyperpar$mode[2])
+
+pal <- colorNumeric(palette = "YlOrRd", domain = seq(-2.6,1.6 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$vm2), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(-2.6,1.6 , by = 0.1), 
+            opacity = 0.5, title = "IID effect for G6PD",
+            position = "topright")
+
+# the iid EFFECT g6
+
+map_2$vd2 = (r.d$summary.random$b2$mean[1:21] * sqrt(r.d$summary.hyperpar$mode[1]) -  
+              r.d$summary.random$b2$mean[22:42] * sqrt(r.d$summary.hyperpar$mode[2])) / 
+  sqrt(1 - r.d$summary.hyperpar$mode[2])
+
+pal <- colorNumeric(palette = "YlOrRd", domain = seq(-5.6,2.6 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$vd2), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(-5.6,2.6 , by = 0.1), 
+            opacity = 0.5, title = "IID effect for G6PD",
+            position = "topright")
+
+
+
+# the spatial effect for malaria
+
+map_2$u.m2 = r.m$summary.random$b1$mean[22:42]
+
+pal <- colorNumeric(palette = "YlOrRd", domain = seq(-5.6,2.6 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$u.m2), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(-5.6,2.6 , by = 0.1), 
+            opacity = 0.5, title = "Besag effect for Malaria",
+            position = "topright")
+
+# the spatial effect for G6PD
+
+map_2$u.d2 = r.d$summary.random$b2$mean[22:42]
+
+
+pal <- colorNumeric(palette = "YlOrRd", domain =seq(-5.6,2.6 , by = 0.1))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$u.d2), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~ seq(-5.6,2.6 , by = 0.1), 
+            opacity = 0.5, title = "Besag effect for G6PD",
+            position = "topright")
+
+
+# The relative risk for malaria 
+
+map_2$rrm = r.m$summary.fitted.values[,"mean"]/map_2$M.E
+range(map_2$rrm)
+
+pal <- colorNumeric(palette = "YlOrRd", 
+                    domain = seq(0,6.3 , by = 0.1))
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$rrm), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~seq(0,6.3 , by = 0.1), 
+            opacity = 0.5, title = "RR",
+            position = "topright")
+
+
+# The relative risk for G6PD
+
+map_2$rrd = r.d$summary.fitted.values[,"mean"]/map_2$D.E
+range(map_2$rrd)
+
+
+pal <- colorNumeric(palette = "YlOrRd", domain =seq(0, 6.3, length = 9))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$rrd), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~ seq(0, 6.3, length = 9), 
+            opacity = 0.5, title = "RR",
+            position = "topright")
+
+# The predicted cases for Malaria 
+
+map_2$Predicted.MM = r.m$summary.fitted.values$mean
+
+pal <- colorNumeric(palette = "YlOrRd", domain =seq(0,40000, length =9))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$Predicted.MM), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~ seq(0,40000, length =9), 
+            opacity = 0.5, title = "Predicted",
+            position = "topright")
+
+
+#Observed
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$M.cases), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~ seq(0,40000, length =9), 
+            opacity = 0.5, title = "Observed",
+            position = "topright")
+
+
+
+
+# The predicted cases for G6PD
+
+
+map_2$Predicted.DD = r.d$summary.fitted.values$mean
+range(map_2$Predicted.DD)
+
+
+pal <- colorNumeric(palette = "YlOrRd", domain =seq(0,500 , by = 10))
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$Predicted.DD), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~ seq(0,500 , by = 10), 
+            opacity = 0.5, title = "Predicted",
+            position = "topright")
+
+
+l %>% addPolygons(color = "grey", weight = 1, 
+                  fillColor = ~pal(map_2$D.cases), 
+                  fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~ seq(0,500 , by = 10), 
+            opacity = 0.5, title = "Observed",
+            position = "topright")
+
+
+```
+Now we can do a multivariate quantile disease mapping of these two diseases.
+```{r, eval = T}
+#Use the dataset and formula we already created for the joint mean modeling
+
+formula = yy ~ -1 + m + offset(log(E1))+ offset(log(E2))+
+  f(ID, model = "besag2", graph=g, scale.model = T)+
+  f(ID_copy, copy="ID", hyper = list(beta = list(fixed = TRUE)))+
+  f(b1 , model = "bym2", graph=g, scale.model=TRUE)+
+  f(b2, model = "bym2", graph=g, scale.model=TRUE)
+
+alpha0 = 0.7
+r1 <- inla(formula,
+           family = c("poisson","poisson"),
+           
+           control.family = list(list(control.link = list(model = "quantile",quantile = alpha0)),
+                                 
+                                 list(control.link = list(model = "quantile",
+                                                          quantile = alpha0))), 
+           data = d,
+           verbose = F,
+           control.compute = list(dic = T, waic = T, cpo = T),
+           control.predictor = list(compute = T))
+
+
+round(r1$summary.fixed[,c(1:3,5)],3)
+
+round(r1$summary.hyperpar[,c(1,3,5,6)],3)
+
+#Opposite quantiles
+r1a <- inla(formula,
+           family = c("poisson","poisson"),
+           control.family = list(list(control.link = list(model = "quantile",quantile = alpha0)),
+                                 list(control.link = list(model = "quantile",
+                                                          quantile = 1-alpha0))),
+           data = d,
+           verbose = F,
+           control.compute = list(dic = T, waic = T, cpo = T),
+           control.predictor = list(compute = T))
+
+
+round(r1a$summary.fixed[,c(1:3,5)],3)
+
+round(r1a$summary.hyperpar[,c(1,3,5,6)],3)
+
+```
+Maybe the *besag2* is too strict because of the restriction a>0. We can add more flexibility with copying a besagproper model component as follows:
+```{r}
+#High quantile of malaria and low quantile of G6PD
+alpha0 = 0.7
+d1 <- d
+d1$ID_copy = c(rep(NA, b),1:b)
+
+formula1 = yy ~ -1 + m + offset(log(E1))+ offset(log(E2))+
+  f(ID, model = "besagproper", graph=g) +
+  f(ID_copy, copy="ID", hyper = list(beta = list(fixed = FALSE))) +
+  f(b1 , model = "bym2", graph=g, scale.model=TRUE)+
+  f(b2, model = "bym2", graph=g, scale.model=TRUE)
+
+r2a <- inla(formula1,
+           family = c("poisson","poisson"),
+           control.family = list(list(control.link = list(model = "quantile",quantile = alpha0)),
+                                 list(control.link = list(model = "quantile",
+                                                          quantile = 1-alpha0))),
+           data = d1,
+           verbose = F,
+           control.compute = list(dic = T, waic = T, cpo = T),
+           control.predictor = list(compute = T))
+
+
+round(r2a$summary.fixed[,c(1:3,5)],3)
+
+round(r2a$summary.hyperpar[,c(1,3,5,6)],3)
+
+#Median joint modeling
+
+alpha0 = 0.5
+
+formula1 = yy ~ -1 + m + offset(log(E1))+ offset(log(E2))+
+  f(ID, model = "besagproper", graph=g) +
+  f(ID_copy, copy="ID", hyper = list(beta = list(fixed = FALSE))) +
+  f(b1 , model = "bym2", graph=g, scale.model=TRUE)+
+  f(b2, model = "bym2", graph=g, scale.model=TRUE)
+
+r3a <- inla(formula1,
+           family = c("poisson","poisson"),
+           control.family = list(list(control.link = list(model = "quantile",quantile = alpha0)),
+                                 list(control.link = list(model = "quantile",
+                                                          quantile = 1-alpha0))),
+           data = d1,
+           verbose = F,
+           control.compute = list(dic = T, waic = T, cpo = T),
+           control.predictor = list(compute = T))
+
+
+round(r3a$summary.fixed[,c(1:3,5)],3)
+
+round(r3a$summary.hyperpar[,c(1,3,5,6)],3)
+
+```
+
+
+
