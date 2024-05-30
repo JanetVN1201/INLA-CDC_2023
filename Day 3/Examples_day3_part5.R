@@ -6,7 +6,7 @@ library(splines)
 
 setwd("/home/dr/Documents/CDC24")
 load("Data/Data_day3.RData") # contains 3 datasets (pbc2 from package JM, bmt from package smcure and readmission from package frailtypack)
-#pbc2 <- pbc2[which(pbc2$id %in% c(1:5)),]
+pbc2 <- pbc2[which(pbc2$id %in% c(1:5)),]
 # extract some variable of interest without missing values
 Longi <- na.omit(pbc2[, c("id", "years", "status","drug","age",
                           "sex","year","serBilir","SGOT", "albumin", "edema",
@@ -53,6 +53,31 @@ ggplot(P$PredS) +
   geom_line(aes(x=year, y=Surv_quant0.025, group=id, color=id), linetype="dashed")+
   geom_line(aes(x=year, y=Surv_quant0.975, group=id, color=id), linetype="dashed")+
   ylab("Survival probability") + theme(legend.position = "none")
+
+
+
+
+
+
+
+
+# id 1:5
+M1_ <- joint(formSurv =  inla.surv(time = years, event = death)  ~ drug,
+            formLong = serBilir ~ (1 + f1(year) + f2(year))*drug +
+              (1 + f1(year) + f2(year)|id), family = "lognormal",
+            dataLong = Longi, dataSurv = Surv, id = "id", timeVar = "year", assoc = "SRE_ind",
+            basRisk = "rw2", control=list(int.strategy="eb"))
+summary(M1_)
+M1_$.args$data
+
+
+
+
+
+
+
+
+
 
 
 
@@ -116,7 +141,7 @@ Nsplines <- ns(Longi$year, knots=c(1,4))
 f1 <- function(x) predict(Nsplines, x)[,1]
 f2 <- function(x) predict(Nsplines, x)[,2]
 f3 <- function(x) predict(Nsplines, x)[,3]
-inla.setOption(num.threads="1:1") # in case of limited random access memory! => slower as it does not uses parallel computations
+# inla.setOption(num.threads="1:1") # in case of limited random access memory! => slower as it does not uses parallel computations
 
 M16 <-joint(formSurv = list(inla.surv(time = years, event = death) ~ drug,
                             inla.surv(time = years, event = trans) ~ drug),

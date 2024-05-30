@@ -49,9 +49,9 @@ summary(lon)
 head(surv)
 head(lon, 20)
 
-
-
-# with INLA:
+#
+#
+# # with INLA:
 # NL <- dim(lon)[1]
 # NS <- dim(surv)[1]
 #
@@ -129,6 +129,10 @@ summary(JointM_CV_CS, sdcor=TRUE)
 
 # predictions
 # create 2 new individuals with different profiles
+DN <- function(x) dnorm(x, mean = 0, sd = 0.4)
+curve(DN, from=-2, to=2)
+abline(v=-1, col="red")
+abline(v=1, col="red")
 
 ID1 <- 1 + b_0 + b_1 * seq(0, 1, len=5) + rnorm(5, 0, 0.1)
 ID2 <- -1 + b_0 + b_1 * seq(0, 1, len=5) + rnorm(5, 0, 0.1)
