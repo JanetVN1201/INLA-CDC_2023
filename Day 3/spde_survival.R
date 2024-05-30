@@ -70,7 +70,7 @@ mesh0 <- fm_mesh_2d(
 plot(mesh0, asp = 1)
 plot(nwEngland, add = TRUE, lwd = 2)
 
-## better: use non-convex boundaries around
+## better: non-convex boundaries around
 bnd1 <- fm_nonconvex_hull(
     x = nwEngland,
     convex = 0.03,
