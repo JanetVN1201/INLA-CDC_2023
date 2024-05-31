@@ -36,7 +36,7 @@ ggplot() + theme_minimal() +
 ## The spatial model
 spde <- inla.spde2.pcmatern(
     mesh = mesh,
-    prior.range = c(10, 0.01),
+    prior.range = c(5, 0.01),
     prior.sigma = c(0.3, 0.01)
 )
 
@@ -120,7 +120,8 @@ ggplot() + theme_minimal() +
             aes(color = mean)) +
     scale_color_distiller(
         palette = 'RdBu'
-    )
+    ) +
+    geom_sf(data = bkt)
 
 ## some interpretation 
 

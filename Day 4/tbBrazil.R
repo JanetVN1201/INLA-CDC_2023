@@ -27,6 +27,8 @@ graph <- sparseMatrix(
     j = unlist(nb[nnb>0])
 )
 
+image(graph)
+
 ### get the data
 tbdata <- read.table(
     file = "../Data/tbBrazil.txt",
@@ -70,6 +72,7 @@ ggplot(map_df) + theme_minimal() +
     scale_fill_distiller(
         palette = "RdBu")
 
+m1
 tbdata$area.st <- tbdata$area
 
 m2 <- update(
