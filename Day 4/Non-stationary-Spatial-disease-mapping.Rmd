@@ -141,10 +141,10 @@ The joint PC prior for $\pmb\theta = \log\pmb\tau$ can be derived as a convoluti
 ## Example 
 We analyze the effects of hydrometeorological hazards on dengue risk in Brazil. To test the spatial variations in the spread of the virus in different sub-regions of Brazil, we fit dengue counts with a Poisson regression model as follows,
 \begin{equation}
-    \pmb y \sim \text{Poisson}(E e^{\pmb \eta}), \quad \pmb \eta = \pmb 1^T \mu + \pmb \alpha 
+    \pmb y \sim \text{Poisson}(\pmb \phi, e^{\pmb \eta}), \quad \pmb \eta = \pmb 1^T \mu + \pmb \alpha 
     \label{eq:brazildengue}
 \end{equation}
-\noindent where $\pmb y$ is the observed counts in November of dengue cases, $E$ is the expected number of counts , $\pmb \eta$ is the linear predictor, $\mu$ is the overall intercept, and $\pmb \alpha$ is the Besag (model 0) or flexible Besag model over space. 
+\noindent where $\pmb y$ is the observed counts in November of dengue cases, $\pmb \phi$ is the expected number of counts , $\pmb \eta$ is the linear predictor, $\mu$ is the overall intercept, and $\pmb \alpha$ is the Besag (model 0) or flexible Besag model over space. 
 ```{r 1}
 load("Data/brazil.RData")
 
