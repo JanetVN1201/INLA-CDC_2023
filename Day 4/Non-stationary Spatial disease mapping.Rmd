@@ -232,7 +232,7 @@ if (T){
       return(list(i=ii,j=jj))
     }
     
-    g <- inla.read.graph(R)
+    g <- INLA::inla.read.graph(R)
     
     x_scaled = c()
     for(i in 1:g$n){
@@ -268,7 +268,7 @@ if (T){
     }
     
     myR <- sbesag(W, prec, id_p, scaled_cnst=scaled_cnst, npart)
-    return(inla.as.sparse(myR))
+    return(INLA::inla.as.sparse(myR))
   }
   
   mu <- function(){return(numeric(0))}
@@ -344,7 +344,7 @@ precision.prior <- list(prec = list(prior = "pc.prec", param = c(0.5, 0.01)))
 fbesag.model <- inla.rgeneric.define(inla.rgeneric.fbesag.model, W = graph, id_p = id_regions ,scaled_cnst = scaled_cnst, sd_sim = 0.15)
 
 config = FALSE
-baseformula <- Y ~ 1 + f(S1,model="generic0", Cmatrix= scaled_graph, constr= TRUE, rankdef = 1,hyper = precision.prior) +
+baseformula <- Y ~ 1 + f(S1, model="generic0", Cmatrix= scaled_graph, constr= TRUE, rankdef = 1,hyper = precision.prior) +
                        f(T1, model = "rw1", constr = TRUE,  scale.model = TRUE, hyper =  list(prec = list(prior = "pc.prec", param = c(0.5, 0.01)))) 
                      
 formula <- Y ~ 1 + f(S1, model = fbesag.model, constr= TRUE, rankdef=1) + 
