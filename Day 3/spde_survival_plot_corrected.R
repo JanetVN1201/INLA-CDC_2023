@@ -107,7 +107,7 @@ spde <- inla.spde2.pcmatern(
 
 ## model formulae adding u(): add f() model term
 
-##  index needed for f() (will be dropped if near future)
+##  index needed for f(): NA's as we will use A.local
 Leuk$spatial <- rep(NA, nrow(Leuk))
 
 ## projector matrix (from mesh nodes to obs. locations)
